@@ -21,6 +21,12 @@ const CAM_DIST = 9;
 const CAM_HEIGHT = 3.5;
 const CAM_LERP = 8;        // higher = snappier follow
 
+// Mouse look
+const MOUSE_SENSITIVITY = 0.003;   // rad per pixel
+const PITCH_MIN = -0.3;            // rad — max look-up angle
+const PITCH_MAX = 0.6;             // rad — max look-down angle
+const CAM_RESET_SPEED = 2.0;       // rad/s — auto-return to behind car
+
 export class CarSystem implements GameSystem {
   readonly name = 'player'; // keep 'player' so CityBuilder can find it via getSystem('player')
 
@@ -48,6 +54,10 @@ export class CarSystem implements GameSystem {
   // Camera state — smoothed with lerp
   private camPos = new THREE.Vector3();
   private camTarget = new THREE.Vector3();
+
+  // Mouse-look offsets relative to car heading
+  private camYaw = 0;    // horizontal orbit offset (rad)
+  private camPitch = 0;  // vertical pitch offset (rad)
 
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
@@ -163,20 +173,42 @@ export class CarSystem implements GameSystem {
   }
 
   private updateCamera(delta: number): void {
-    // Compute ideal camera position: behind and above the car
-    const sinH = Math.sin(this.heading);
-    const cosH = Math.cos(this.heading);
+    const { mouseDX, mouseDY } = this.input.state;
+
+    // Apply mouse look
+    this.camYaw -= mouseDX * MOUSE_SENSITIVITY;
+    this.camPitch += mouseDY * MOUSE_SENSITIVITY;
+    this.camPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.camPitch));
+
+    // Slowly return yaw to zero when car is moving
+    if (Math.abs(this.speed) > 1) {
+      this.camYaw *= Math.max(0, 1 - CAM_RESET_SPEED * delta);
+    }
+
+    // Camera angle = car heading + yaw offset
+    const angle = this.heading + this.camYaw;
+    const sinA = Math.sin(angle);
+    const cosA = Math.cos(angle);
+
+    // Pitch: elevate/depress camera arm
+    const pitchCos = Math.cos(this.camPitch);
+    const pitchSin = Math.sin(this.camPitch);
+    const dist = CAM_DIST * pitchCos;
+    const height = CAM_HEIGHT + CAM_DIST * pitchSin;
 
     const idealPos = new THREE.Vector3(
-      this.position.x - sinH * CAM_DIST,
-      this.position.y + CAM_HEIGHT,
-      this.position.z - cosH * CAM_DIST,
+      this.position.x - sinA * dist,
+      this.position.y + height,
+      this.position.z - cosA * dist,
     );
 
+    // Look-at point stays on the car (slightly ahead and up)
+    const sinH = Math.sin(this.heading);
+    const cosH = Math.cos(this.heading);
     const lookAt = new THREE.Vector3(
-      this.position.x + sinH * 4,
+      this.position.x + sinH * 2,
       this.position.y + 1.2,
-      this.position.z + cosH * 4,
+      this.position.z + cosH * 2,
     );
 
     const t = Math.min(1, CAM_LERP * delta);
