@@ -25,7 +25,6 @@ const CAM_LERP = 8;        // higher = snappier follow
 const MOUSE_SENSITIVITY = 0.003;   // rad per pixel
 const PITCH_MIN = -0.3;            // rad — max look-up angle
 const PITCH_MAX = 0.6;             // rad — max look-down angle
-const CAM_RESET_SPEED = 2.0;       // rad/s — auto-return to behind car
 
 export class CarSystem implements GameSystem {
   readonly name = 'player'; // keep 'player' so CityBuilder can find it via getSystem('player')
@@ -180,11 +179,6 @@ export class CarSystem implements GameSystem {
     this.camPitch += mouseDY * MOUSE_SENSITIVITY;
     this.camPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.camPitch));
 
-    // Slowly return yaw to zero when car is moving
-    if (Math.abs(this.speed) > 1) {
-      this.camYaw *= Math.max(0, 1 - CAM_RESET_SPEED * delta);
-    }
-
     // Camera angle = car heading + yaw offset
     const angle = this.heading + this.camYaw;
     const sinA = Math.sin(angle);
@@ -202,13 +196,11 @@ export class CarSystem implements GameSystem {
       this.position.z - cosA * dist,
     );
 
-    // Look-at point stays on the car (slightly ahead and up)
-    const sinH = Math.sin(this.heading);
-    const cosH = Math.cos(this.heading);
+    // Look-at point is ahead along the camera's orbit direction, not the car heading
     const lookAt = new THREE.Vector3(
-      this.position.x + sinH * 2,
+      this.position.x + sinA * 2,
       this.position.y + 1.2,
-      this.position.z + cosH * 2,
+      this.position.z + cosA * 2,
     );
 
     const t = Math.min(1, CAM_LERP * delta);
