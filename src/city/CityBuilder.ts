@@ -17,7 +17,7 @@ const MARKING_COLOR = 0xccccaa;
 export class CityBuilder implements GameSystem {
   readonly name = 'city';
 
-  private layout!: CityLayoutData;
+  layout!: CityLayoutData;
 
   constructor(
     private gridX = 12,

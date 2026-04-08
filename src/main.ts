@@ -4,6 +4,7 @@ import { InputSystem } from './systems/InputSystem';
 import { CarSystem } from './systems/CarSystem';
 import { CityBuilder } from './city/CityBuilder';
 import { CloudSystem } from './systems/CloudSystem';
+import { MinimapSystem } from './systems/MinimapSystem';
 
 const GRID_X = 12;
 const GRID_Z = 12;
@@ -20,5 +21,6 @@ game
   .addSystem(new InputSystem())
   .addSystem(new CarSystem())
   .addSystem(new CityBuilder(GRID_X, GRID_Z, CITY_SEED))
+  .addSystem(new MinimapSystem())
   .addSystem(new CloudSystem(CITY_CENTRE_X, CITY_CENTRE_Z))
   .start();
