@@ -6,12 +6,12 @@ import { CityBuilder } from './city/CityBuilder';
 import { CloudSystem } from './systems/CloudSystem';
 import { MinimapSystem } from './systems/MinimapSystem';
 
-const GRID_X = 12;
-const GRID_Z = 12;
+const GRID_X = 6;
+const GRID_Z = 6;
 const CITY_SEED = 42;
 // Approximate city centre — used to anchor cloud wrapping
-const CITY_CENTRE_X = 250;
-const CITY_CENTRE_Z = 250;
+const CITY_CENTRE_X = 125;
+const CITY_CENTRE_Z = 125;
 
 const game = new Game();
 

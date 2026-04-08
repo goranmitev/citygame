@@ -126,12 +126,17 @@ export function generateCityLayout(
     }
   }
 
+  // Precompute per-street road and sidewalk widths for corner generation
+  const hRoadW: number[] = hStreetWidths.map(sw => sw * ROAD_FRACTION);
+  const hSidewalkW: number[] = hStreetWidths.map((sw, j) => (sw - hRoadW[j]) / 2);
+  const vRoadW: number[] = vStreetWidths.map(sw => sw * ROAD_FRACTION);
+  const vSidewalkW: number[] = vStreetWidths.map((sw, i) => (sw - vRoadW[i]) / 2);
+
   // Generate horizontal streets (running along X axis)
   for (let j = 0; j <= gridZ; j++) {
     const sz = hStreetStarts[j];
-    const sw = hStreetWidths[j];
-    const roadW = sw * ROAD_FRACTION;
-    const sidewalkW = (sw - roadW) / 2;
+    const roadW = hRoadW[j];
+    const sidewalkW = hSidewalkW[j];
 
     // Road
     streets.push({
@@ -141,9 +146,9 @@ export function generateCityLayout(
       depth: roadW,
     });
 
-    // Sidewalk segments between vertical streets (skip intersections)
+    // Sidewalk segments between vertical streets (skip intersections and corners)
     for (let k = 0; k < vStreetStarts.length - 1; k++) {
-      const startX = k === 0 ? 0 : vStreetStarts[k] + vStreetWidths[k];
+      const startX = vStreetStarts[k] + vStreetWidths[k];
       const endX = vStreetStarts[k + 1];
       if (endX <= startX) continue;
       // top sidewalk
@@ -156,9 +161,8 @@ export function generateCityLayout(
   // Generate vertical streets (running along Z axis)
   for (let i = 0; i <= gridX; i++) {
     const sx = vStreetStarts[i];
-    const sw = vStreetWidths[i];
-    const roadW = sw * ROAD_FRACTION;
-    const sidewalkW = (sw - roadW) / 2;
+    const roadW = vRoadW[i];
+    const sidewalkW = vSidewalkW[i];
 
     // Road
     streets.push({
@@ -168,15 +172,40 @@ export function generateCityLayout(
       depth: totalDepth,
     });
 
-    // Sidewalk segments between horizontal streets (skip intersections)
+    // Sidewalk segments between horizontal streets (skip intersections and corners)
     for (let k = 0; k < hStreetStarts.length - 1; k++) {
-      const startZ = k === 0 ? 0 : hStreetStarts[k] + hStreetWidths[k];
+      const startZ = hStreetStarts[k] + hStreetWidths[k];
       const endZ = hStreetStarts[k + 1];
       if (endZ <= startZ) continue;
       // left sidewalk
       sidewalks.push({ x: sx, z: startZ, width: sidewalkW, depth: endZ - startZ });
       // right sidewalk
       sidewalks.push({ x: sx + sidewalkW + roadW, z: startZ, width: sidewalkW, depth: endZ - startZ });
+    }
+  }
+
+  // Fill intersection corners: at each crossing of vertical street i and horizontal street j,
+  // place 4 sidewalk corner quads where the sidewalk strips from both directions would meet.
+  for (let i = 0; i <= gridX; i++) {
+    const sx = vStreetStarts[i];
+    const vRoad = vRoadW[i];
+    const vSide = vSidewalkW[i];
+
+    for (let j = 0; j <= gridZ; j++) {
+      const sz = hStreetStarts[j];
+      const hRoad = hRoadW[j];
+      const hSide = hSidewalkW[j];
+
+      if (vSide <= 0 || hSide <= 0) continue;
+
+      // top-left corner
+      sidewalks.push({ x: sx,                   z: sz,                   width: vSide, depth: hSide });
+      // top-right corner
+      sidewalks.push({ x: sx + vSide + vRoad,   z: sz,                   width: vSide, depth: hSide });
+      // bottom-left corner
+      sidewalks.push({ x: sx,                   z: sz + hSide + hRoad,   width: vSide, depth: hSide });
+      // bottom-right corner
+      sidewalks.push({ x: sx + vSide + vRoad,   z: sz + hSide + hRoad,   width: vSide, depth: hSide });
     }
   }
 
