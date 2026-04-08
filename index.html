@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>City Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 20;
+      cursor: pointer;
+    }
+    #overlay .prompt {
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 1.5rem;
+      text-align: center;
+      line-height: 2;
+    }
+    #overlay .prompt .keys {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 1rem;
+      margin: 0 2px;
+    }
+    #overlay.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div class="prompt">
+      Click to drive<br/>
+      <span class="keys">W</span> accelerate &nbsp;
+      <span class="keys">S</span> brake / reverse<br/>
+      <span class="keys">A</span>
+      <span class="keys">D</span> steer
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
