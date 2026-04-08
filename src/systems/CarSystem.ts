@@ -13,8 +13,8 @@ const MAX_SPEED_REV = 6;
 const ACCEL = 14;          // m/s² while throttle pressed
 const BRAKE_FORCE = 20;    // m/s² while braking
 const DRAG = 3.5;          // passive deceleration when no input
-const STEER_SPEED = 2.0;   // rad/s max turn rate at low speed
-const SPEED_STEER_FACTOR = 0.06; // reduces steering at high speed
+const STEER_SPEED = 3.2;   // rad/s max turn rate at low speed
+const SPEED_STEER_FACTOR = 0.03; // reduces steering at high speed
 
 // Camera spring-arm
 const CAM_DIST = 9;
@@ -76,6 +76,11 @@ export class CarSystem implements GameSystem {
 
     // Snap camera to initial position behind car
     this.snapCamera();
+  }
+
+  /** Speed in km/h (always positive). */
+  getSpeedKmh(): number {
+    return Math.abs(this.speed) * 3.6;
   }
 
   /** Register collision AABBs (called by city generator). */

@@ -5,6 +5,7 @@ import { CarSystem } from './systems/CarSystem';
 import { CityBuilder } from './city/CityBuilder';
 import { CloudSystem } from './systems/CloudSystem';
 import { MinimapSystem } from './systems/MinimapSystem';
+import { SpeedometerSystem } from './systems/SpeedometerSystem';
 
 const GRID_X = 6;
 const GRID_Z = 6;
@@ -22,5 +23,6 @@ game
   .addSystem(new CarSystem())
   .addSystem(new CityBuilder(GRID_X, GRID_Z, CITY_SEED))
   .addSystem(new MinimapSystem())
+  .addSystem(new SpeedometerSystem())
   .addSystem(new CloudSystem(CITY_CENTRE_X, CITY_CENTRE_Z))
   .start();
