@@ -1,4 +1,4 @@
-import { createRNG, randRange } from '../utils/random';
+import { createRNG, randRange, randInt } from '../utils/random';
 
 export interface BlockDef {
   /** Block bounding box in world coords (x, z) */
@@ -34,11 +34,11 @@ export interface CityLayoutData {
 }
 
 /**
- * Generates a European-style city grid layout.
+ * Generates a European-style city grid layout with varied street widths and block sizes.
  *
- * The city is a grid of blocks separated by streets.
+ * Streets vary from narrow alleys to wide boulevards.
+ * Blocks vary significantly in size for an organic look.
  * Each block is subdivided into building plots.
- * Streets vary slightly in width for realism.
  */
 export function generateCityLayout(
   gridX: number,
@@ -47,16 +47,28 @@ export function generateCityLayout(
 ): CityLayoutData {
   const rng = createRNG(seed);
 
-  const STREET_WIDTH = 8; // meters — road + sidewalks
-  const ROAD_WIDTH = 5; // meters — driveable road
-  const SIDEWALK_WIDTH = (STREET_WIDTH - ROAD_WIDTH) / 2;
-  const MIN_BLOCK_SIZE = 25;
-  const MAX_BLOCK_SIZE = 40;
-  const PLOT_MARGIN = 0.5; // gap between buildings
+  const ROAD_FRACTION = 0.65; // road takes ~65% of street width
+  const MIN_BLOCK_SIZE = 18;
+  const MAX_BLOCK_SIZE = 55;
+  const PLOT_MARGIN = 0.5;
   const MIN_PLOT_WIDTH = 6;
-  const MAX_PLOT_WIDTH = 14;
+  const MAX_PLOT_WIDTH = 16;
 
-  // Generate block sizes
+  // Each street gets its own width: narrow alley, normal, or boulevard
+  function randomStreetWidth(): number {
+    const roll = rng();
+    if (roll < 0.2) return randRange(rng, 5, 7);   // narrow alley
+    if (roll < 0.7) return randRange(rng, 8, 11);  // normal street
+    return randRange(rng, 13, 18);                  // boulevard
+  }
+
+  // Street widths: (gridX+1) vertical streets, (gridZ+1) horizontal streets
+  const vStreetWidths: number[] = [];
+  const hStreetWidths: number[] = [];
+  for (let i = 0; i <= gridX; i++) vStreetWidths.push(randomStreetWidth());
+  for (let j = 0; j <= gridZ; j++) hStreetWidths.push(randomStreetWidth());
+
+  // Block sizes — wider variance than before
   const blockWidths: number[] = [];
   const blockDepths: number[] = [];
   for (let i = 0; i < gridX; i++) {
@@ -66,31 +78,35 @@ export function generateCityLayout(
     blockDepths.push(randRange(rng, MIN_BLOCK_SIZE, MAX_BLOCK_SIZE));
   }
 
-  // Compute cumulative positions
+  // Compute cumulative X positions: border street + block + street + block …
   const blockXPositions: number[] = [];
   let cx = 0;
   for (let i = 0; i < gridX; i++) {
-    blockXPositions.push(cx + STREET_WIDTH);
-    cx += blockWidths[i] + STREET_WIDTH;
+    cx += vStreetWidths[i];
+    blockXPositions.push(cx);
+    cx += blockWidths[i];
   }
-  const totalWidth = cx + STREET_WIDTH;
+  const totalWidth = cx + vStreetWidths[gridX];
 
   const blockZPositions: number[] = [];
   let cz = 0;
   for (let j = 0; j < gridZ; j++) {
-    blockZPositions.push(cz + STREET_WIDTH);
-    cz += blockDepths[j] + STREET_WIDTH;
+    cz += hStreetWidths[j];
+    blockZPositions.push(cz);
+    cz += blockDepths[j];
   }
-  const totalDepth = cz + STREET_WIDTH;
+  const totalDepth = cz + hStreetWidths[gridZ];
 
-  const verticalStreetStarts: number[] = [0];
+  // X positions where vertical streets start
+  const vStreetStarts: number[] = [0];
   for (let i = 0; i < gridX; i++) {
-    verticalStreetStarts.push(blockXPositions[i] + blockWidths[i]);
+    vStreetStarts.push(blockXPositions[i] + blockWidths[i]);
   }
 
-  const horizontalStreetStarts: number[] = [0];
+  // Z positions where horizontal streets start
+  const hStreetStarts: number[] = [0];
   for (let j = 0; j < gridZ; j++) {
-    horizontalStreetStarts.push(blockZPositions[j] + blockDepths[j]);
+    hStreetStarts.push(blockZPositions[j] + blockDepths[j]);
   }
 
   const blocks: BlockDef[] = [];
@@ -112,68 +128,55 @@ export function generateCityLayout(
 
   // Generate horizontal streets (running along X axis)
   for (let j = 0; j <= gridZ; j++) {
-    const sz = j === 0 ? 0 : blockZPositions[j - 1] + blockDepths[j - 1];
+    const sz = hStreetStarts[j];
+    const sw = hStreetWidths[j];
+    const roadW = sw * ROAD_FRACTION;
+    const sidewalkW = (sw - roadW) / 2;
+
     // Road
     streets.push({
       x: 0,
-      z: sz + SIDEWALK_WIDTH,
+      z: sz + sidewalkW,
       width: totalWidth,
-      depth: ROAD_WIDTH,
+      depth: roadW,
     });
-    // Top sidewalk segments
-    for (let k = 0; k < verticalStreetStarts.length - 1; k++) {
-      const startX = k === 0 ? 0 : verticalStreetStarts[k] + SIDEWALK_WIDTH + ROAD_WIDTH;
-      const endX = verticalStreetStarts[k + 1] + SIDEWALK_WIDTH;
-      sidewalks.push({
-        x: startX,
-        z: sz,
-        width: endX - startX,
-        depth: SIDEWALK_WIDTH,
-      });
-    }
-    // Bottom sidewalk segments
-    for (let k = 0; k < verticalStreetStarts.length - 1; k++) {
-      const startX = k === 0 ? 0 : verticalStreetStarts[k] + SIDEWALK_WIDTH + ROAD_WIDTH;
-      const endX = verticalStreetStarts[k + 1] + SIDEWALK_WIDTH;
-      sidewalks.push({
-        x: startX,
-        z: sz + SIDEWALK_WIDTH + ROAD_WIDTH,
-        width: endX - startX,
-        depth: SIDEWALK_WIDTH,
-      });
+
+    // Sidewalk segments between vertical streets (skip intersections)
+    for (let k = 0; k < vStreetStarts.length - 1; k++) {
+      const startX = k === 0 ? 0 : vStreetStarts[k] + vStreetWidths[k];
+      const endX = vStreetStarts[k + 1];
+      if (endX <= startX) continue;
+      // top sidewalk
+      sidewalks.push({ x: startX, z: sz, width: endX - startX, depth: sidewalkW });
+      // bottom sidewalk
+      sidewalks.push({ x: startX, z: sz + sidewalkW + roadW, width: endX - startX, depth: sidewalkW });
     }
   }
 
   // Generate vertical streets (running along Z axis)
   for (let i = 0; i <= gridX; i++) {
-    const sx = i === 0 ? 0 : blockXPositions[i - 1] + blockWidths[i - 1];
+    const sx = vStreetStarts[i];
+    const sw = vStreetWidths[i];
+    const roadW = sw * ROAD_FRACTION;
+    const sidewalkW = (sw - roadW) / 2;
+
+    // Road
     streets.push({
-      x: sx + SIDEWALK_WIDTH,
+      x: sx + sidewalkW,
       z: 0,
-      width: ROAD_WIDTH,
+      width: roadW,
       depth: totalDepth,
     });
-    // Left sidewalk segments
-    for (let k = 0; k < horizontalStreetStarts.length - 1; k++) {
-      const startZ = k === 0 ? 0 : horizontalStreetStarts[k] + SIDEWALK_WIDTH + ROAD_WIDTH;
-      const endZ = horizontalStreetStarts[k + 1] + SIDEWALK_WIDTH;
-      sidewalks.push({
-        x: sx,
-        z: startZ,
-        width: SIDEWALK_WIDTH,
-        depth: endZ - startZ,
-      });
-    }
-    // Right sidewalk segments
-    for (let k = 0; k < horizontalStreetStarts.length - 1; k++) {
-      const startZ = k === 0 ? 0 : horizontalStreetStarts[k] + SIDEWALK_WIDTH + ROAD_WIDTH;
-      const endZ = horizontalStreetStarts[k + 1] + SIDEWALK_WIDTH;
-      sidewalks.push({
-        x: sx + SIDEWALK_WIDTH + ROAD_WIDTH,
-        z: startZ,
-        width: SIDEWALK_WIDTH,
-        depth: endZ - startZ,
-      });
+
+    // Sidewalk segments between horizontal streets (skip intersections)
+    for (let k = 0; k < hStreetStarts.length - 1; k++) {
+      const startZ = k === 0 ? 0 : hStreetStarts[k] + hStreetWidths[k];
+      const endZ = hStreetStarts[k + 1];
+      if (endZ <= startZ) continue;
+      // left sidewalk
+      sidewalks.push({ x: sx, z: startZ, width: sidewalkW, depth: endZ - startZ });
+      // right sidewalk
+      sidewalks.push({ x: sx + sidewalkW + roadW, z: startZ, width: sidewalkW, depth: endZ - startZ });
     }
   }
 
@@ -181,8 +184,10 @@ export function generateCityLayout(
 }
 
 /**
- * Subdivide a block into building plots along the X axis.
- * Buildings fill the block depth, varied widths.
+ * Subdivide a block into building plots using a randomized 2-pass approach:
+ * - Randomly split the block into rows along Z
+ * - Each row is subdivided into plots along X
+ * This produces more organic, varied layouts than the fixed front/back row approach.
  */
 function subdividePlots(
   rng: () => number,
@@ -196,49 +201,63 @@ function subdividePlots(
 ): PlotDef[] {
   const plots: PlotDef[] = [];
 
-  // European style: buildings form a perimeter around the block
-  // For simplicity we place buildings in two rows (front and back) along Z
-  const rowDepth = Math.min(blockD * 0.4, 12);
+  // Decide how many depth rows: 1 row for small blocks, 2-3 for large ones
+  const numRows = blockD < 28 ? 1 : randInt(rng, 2, blockD > 42 ? 3 : 2);
 
-  for (const rowZ of [blockZ + margin, blockZ + blockD - rowDepth - margin]) {
+  // Split block depth into rows with random proportions.
+  // Available depth = blockD minus outer margins (top+bottom) and inter-row gaps.
+  const rowDepths: number[] = [];
+  const availableD = blockD - 2 * margin - (numRows - 1) * margin;
+  if (numRows === 1) {
+    rowDepths.push(availableD);
+  } else {
+    let remaining = availableD;
+    for (let r = 0; r < numRows - 1; r++) {
+      const rowsLeft = numRows - r;
+      const minShare = Math.max(minW + 2 * margin, remaining / rowsLeft * 0.4);
+      const maxShare = remaining / rowsLeft * 0.8;
+      const share = randRange(rng, minShare, Math.max(minShare + 1, maxShare));
+      rowDepths.push(share);
+      remaining -= share;
+    }
+    rowDepths.push(remaining);
+  }
+
+  let rowZ = blockZ + margin;
+  for (let r = 0; r < numRows; r++) {
+    const rd = rowDepths[r];
+    const plotDepth = rd - margin * 2;
+    if (plotDepth < minW) break;
+
+    // Random min/max plot width per row for variety
+    const rowMinW = randRange(rng, minW, minW * 1.3);
+    const rowMaxW = randRange(rng, maxW * 0.6, maxW);
+
     let px = blockX + margin;
     const endX = blockX + blockW - margin;
 
-    while (px + minW <= endX) {
+    while (px + rowMinW <= endX) {
       const remaining = endX - px;
-      const w = Math.min(randRange(rng, minW, maxW), remaining);
-      if (w < minW) break;
+      const w = Math.min(randRange(rng, rowMinW, rowMaxW), remaining);
+      if (w < rowMinW) break;
 
-      const floors = Math.floor(randRange(rng, 2, 7)); // 2-6 floors
+      const plotWidth = w - margin;
+      if (plotWidth < 1 || plotDepth < 1) { px += w; continue; }
+
+      const floors = randInt(rng, 2, 8); // 2-8 floors
 
       plots.push({
         x: px,
         z: rowZ,
-        width: w - margin,
-        depth: rowDepth - margin,
+        width: plotWidth,
+        depth: plotDepth,
         floors,
       });
 
       px += w;
     }
-  }
 
-  // Side buildings connecting front and back rows
-  const innerZ = blockZ + margin + rowDepth;
-  const innerDepth = blockD - 2 * (rowDepth + margin);
-  if (innerDepth > 4) {
-    for (const sideX of [blockX + margin, blockX + blockW - margin - randRange(rng, minW, Math.min(maxW, 10))]) {
-      const w = randRange(rng, minW, Math.min(maxW, 10));
-      if (sideX + w <= blockX + blockW) {
-        plots.push({
-          x: sideX,
-          z: innerZ,
-          width: w - margin,
-          depth: innerDepth,
-          floors: Math.floor(randRange(rng, 2, 5)),
-        });
-      }
-    }
+    rowZ += rd + margin; // rd = row height (excluding outer margins), +margin = gap to next row
   }
 
   return plots;

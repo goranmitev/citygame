@@ -228,16 +228,13 @@ function pushRoof(
     shape.lineTo(hw, 0);
     shape.lineTo(-hw, 0);
 
+    const extrudeDepth = plot.depth + overhang * 2;
     const roofGeo = new THREE.ExtrudeGeometry(shape, {
-      depth: plot.depth + overhang * 2,
+      depth: extrudeDepth,
       bevelEnabled: false,
     });
-    roofGeo.rotateY(Math.PI / 2);
-    _mat4.makeTranslation(
-      cx + (plot.depth + overhang * 2) / 2,
-      height,
-      cz - plot.width / 2 - overhang,
-    );
+    // Shape is centered at X=0, extruded along +Z from Z=0 to Z=extrudeDepth.
+    _mat4.makeTranslation(cx, height, cz - extrudeDepth / 2);
     roofGeo.applyMatrix4(_mat4);
     applyVertexColor(roofGeo, roofColor);
     buckets.roofs.push(roofGeo);

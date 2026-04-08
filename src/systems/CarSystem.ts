@@ -27,6 +27,12 @@ export class CarSystem implements GameSystem {
   // Exposed so CityBuilder can set spawn position
   readonly position = new THREE.Vector3(0, 0, 0);
 
+  /** Call after setting position to snap camera to the new spawn. */
+  snapToSpawn(): void {
+    this.snapCamera();
+    this.updateCarMesh();
+  }
+
   private camera!: THREE.PerspectiveCamera;
   private input!: InputSystem;
   private sceneSystem!: SceneSystem;
@@ -74,7 +80,6 @@ export class CarSystem implements GameSystem {
 
   update(delta: number): void {
     const { state } = this.input;
-    if (!state.pointerLocked) return;
 
     this.updatePhysics(delta, state);
     this.updateCarMesh();

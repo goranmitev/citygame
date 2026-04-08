@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Game, GameSystem } from '../core/Game';
-import { PlayerSystem } from '../systems/PlayerSystem';
+import { CarSystem } from '../systems/CarSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
 
@@ -60,12 +60,15 @@ export class CityBuilder implements GameSystem {
     this.mergeBucket(scene, buckets.roofs, mats.roof, true);
 
     // --- Register colliders with player ---
-    const player = game.getSystem<PlayerSystem>('player');
+    const player = game.getSystem<CarSystem>('player');
     if (player) {
       player.addColliders(colliders);
-      const spawnX = this.layout.totalWidth / 2;
-      const spawnZ = this.layout.totalDepth / 2;
+      // Spawn in the center of the first horizontal street (width > depth = runs along X)
+      const firstHStreet = this.layout.streets.find((s) => s.width > s.depth);
+      const spawnX = firstHStreet ? firstHStreet.x + firstHStreet.width / 2 : this.layout.totalWidth / 2;
+      const spawnZ = firstHStreet ? firstHStreet.z + firstHStreet.depth / 2 : this.layout.totalDepth / 2;
       player.position.set(spawnX, 0, spawnZ);
+      player.snapToSpawn();
     }
   }
 
@@ -77,15 +80,19 @@ export class CityBuilder implements GameSystem {
     shadows: boolean,
   ): void {
     if (geos.length === 0) return;
-    const merged = mergeGeometries(geos, false);
+    const normalized = geos.map((g) => g.index ? g.toNonIndexed() : g);
+    const merged = mergeGeometries(normalized, false);
     if (!merged) return;
     const mesh = new THREE.Mesh(merged, material);
     mesh.castShadow = shadows;
     mesh.receiveShadow = shadows;
     scene.add(mesh);
 
-    // Dispose source geometries
-    for (const g of geos) g.dispose();
+    // Dispose source and any newly created non-indexed copies
+    for (let i = 0; i < geos.length; i++) {
+      if (normalized[i] !== geos[i]) normalized[i].dispose();
+      geos[i].dispose();
+    }
     geos.length = 0;
   }
 
@@ -137,7 +144,7 @@ export class CityBuilder implements GameSystem {
     }
 
     // Merge roads
-    const roadMerged = mergeGeometries(roadGeos, false);
+    const roadMerged = mergeGeometries(roadGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (roadMerged) {
       const mesh = new THREE.Mesh(roadMerged, new THREE.MeshStandardMaterial({ color: ROAD_COLOR, roughness: 0.85 }));
       mesh.receiveShadow = true;
@@ -146,7 +153,7 @@ export class CityBuilder implements GameSystem {
     for (const g of roadGeos) g.dispose();
 
     // Merge markings
-    const markingMerged = mergeGeometries(markingGeos, false);
+    const markingMerged = mergeGeometries(markingGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (markingMerged) {
       scene.add(new THREE.Mesh(markingMerged, new THREE.MeshStandardMaterial({ color: MARKING_COLOR, roughness: 0.5 })));
     }
@@ -168,7 +175,7 @@ export class CityBuilder implements GameSystem {
       geos.push(geo);
     }
 
-    const merged = mergeGeometries(geos, false);
+    const merged = mergeGeometries(geos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (merged) {
       const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: SIDEWALK_COLOR, roughness: 0.8 }));
       mesh.receiveShadow = true;

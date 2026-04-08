@@ -11,7 +11,7 @@ export class Game {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
-  readonly clock: THREE.Clock;
+  private timer = new THREE.Timer();
 
   private systems: GameSystem[] = [];
   private running = false;
@@ -33,15 +33,13 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
     if (!canvas) {
       document.body.appendChild(this.renderer.domElement);
     }
-
-    this.clock = new THREE.Clock();
 
     window.addEventListener('resize', this.onResize);
   }
@@ -59,7 +57,6 @@ export class Game {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.clock.start();
     this.loop();
   }
 
@@ -81,8 +78,9 @@ export class Game {
     if (!this.running) return;
     this.animFrameId = requestAnimationFrame(this.loop);
 
-    const delta = Math.min(this.clock.getDelta(), 0.1); // cap at 100ms
-    const elapsed = this.clock.getElapsedTime();
+    this.timer.update();
+    const delta = Math.min(this.timer.getDelta(), 0.1); // cap at 100ms
+    const elapsed = this.timer.getElapsed();
 
     for (const system of this.systems) {
       system.update?.(delta, elapsed);
