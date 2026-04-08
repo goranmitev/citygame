@@ -13,12 +13,16 @@ export class SpeedometerSystem implements GameSystem {
   private car!: CarSystem;
 
   init(game: Game): void {
-    this.car = game.getSystem<CarSystem>('player')!;
+    this.car = game.getSystem<CarSystem>('car')!;
     this.buildCanvas();
   }
 
   update(): void {
-    this.draw(this.car.getSpeedKmh());
+    // Only show speedometer while driving
+    this.canvas.style.display = this.car.isOccupied ? 'block' : 'none';
+    if (this.car.isOccupied) {
+      this.draw(this.car.getSpeedKmh());
+    }
   }
 
   dispose(): void {
@@ -64,10 +68,9 @@ export class SpeedometerSystem implements GameSystem {
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Arc angles: start = 135° (bottom-left), end = 45° (bottom-right)
+    // Arc angles: start = 135° (bottom-left), sweep 270° clockwise to 45° (bottom-right)
     const START_ANGLE = (135 * Math.PI) / 180;
-    const END_ANGLE = (45 * Math.PI) / 180;
-    const SWEEP = (270 * Math.PI) / 180; // total arc
+    const SWEEP = (270 * Math.PI) / 180;
 
     // --- Tick marks ---
     const tickCount = 8; // 0, 20, 40 … 160

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Game, GameSystem } from '../core/Game';
-import { CarSystem } from '../systems/CarSystem';
+import { WalkSystem } from '../systems/WalkSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
 
@@ -60,7 +60,7 @@ export class CityBuilder implements GameSystem {
     this.mergeBucket(scene, buckets.roofs, mats.roof, true);
 
     // --- Register colliders with player ---
-    const player = game.getSystem<CarSystem>('player');
+    const player = game.getSystem<WalkSystem>('player');
     if (player) {
       player.addColliders(colliders);
       // Spawn in the center of the first horizontal street (width > depth = runs along X)

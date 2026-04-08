@@ -6,6 +6,8 @@ export interface InputState {
   left: boolean;
   right: boolean;
   sprint: boolean;
+  interact: boolean;      // E key — held state
+  interactPressed: boolean; // E key — single-frame pulse
   mouseDX: number;
   mouseDY: number;
   pointerLocked: boolean;
@@ -23,6 +25,8 @@ export class InputSystem implements GameSystem {
     left: false,
     right: false,
     sprint: false,
+    interact: false,
+    interactPressed: false,
     mouseDX: 0,
     mouseDY: 0,
     pointerLocked: false,
@@ -73,6 +77,7 @@ export class InputSystem implements GameSystem {
   resetDeltas(): void {
     this.state.mouseDX = 0;
     this.state.mouseDY = 0;
+    this.state.interactPressed = false;
   }
 
   dispose(): void {
@@ -116,6 +121,10 @@ export class InputSystem implements GameSystem {
       case 'ShiftLeft':
       case 'ShiftRight':
         this.state.sprint = down;
+        break;
+      case 'KeyE':
+        this.state.interact = down;
+        if (down) this.state.interactPressed = true;
         break;
     }
   }

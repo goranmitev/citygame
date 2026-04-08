@@ -1,28 +1,29 @@
 import { Game, GameSystem } from '../core/Game';
+import { WalkSystem } from './WalkSystem';
 import { CarSystem } from './CarSystem';
 import { CityBuilder } from '../city/CityBuilder';
 import { CityLayoutData } from '../city/CityLayout';
 
-const MAP_SIZE = 180;       // px — canvas size
-const PADDING = 10;         // px from corner
-const DOT_RADIUS = 4;       // px — player dot
-const ARROW_SIZE = 7;       // px — arrowhead half-size
+const MAP_SIZE = 180;
+const PADDING = 10;
+const DOT_RADIUS = 4;
+const ARROW_SIZE = 7;
 
 export class MinimapSystem implements GameSystem {
   readonly name = 'minimap';
 
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
+  private walker!: WalkSystem;
   private car!: CarSystem;
   private layout!: CityLayoutData;
 
-  // Pre-rendered static city background
   private cityCanvas!: HTMLCanvasElement;
 
   init(game: Game): void {
-    this.car = game.getSystem<CarSystem>('player')!;
+    this.walker = game.getSystem<WalkSystem>('player')!;
+    this.car = game.getSystem<CarSystem>('car')!;
 
-    // CityBuilder exposes the layout after init
     const builder = game.getSystem<CityBuilder>('city')!;
     this.layout = builder.layout;
 
@@ -51,30 +52,17 @@ export class MinimapSystem implements GameSystem {
     const scaleX = MAP_SIZE / totalWidth;
     const scaleZ = MAP_SIZE / totalDepth;
 
-    // Background (streets / asphalt)
     ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-    // Sidewalks
     ctx.fillStyle = '#5a5a5a';
     for (const sw of this.layout.sidewalks) {
-      ctx.fillRect(
-        sw.x * scaleX,
-        sw.z * scaleZ,
-        sw.width * scaleX,
-        sw.depth * scaleZ,
-      );
+      ctx.fillRect(sw.x * scaleX, sw.z * scaleZ, sw.width * scaleX, sw.depth * scaleZ);
     }
 
-    // Building blocks (filled rectangles per block)
     ctx.fillStyle = '#8b9eb5';
     for (const block of this.layout.blocks) {
-      ctx.fillRect(
-        block.x * scaleX,
-        block.z * scaleZ,
-        block.width * scaleX,
-        block.depth * scaleZ,
-      );
+      ctx.fillRect(block.x * scaleX, block.z * scaleZ, block.width * scaleX, block.depth * scaleZ);
     }
   }
 
@@ -106,28 +94,39 @@ export class MinimapSystem implements GameSystem {
     const scaleX = MAP_SIZE / totalWidth;
     const scaleZ = MAP_SIZE / totalDepth;
 
-    // Stamp pre-rendered city
     ctx.drawImage(this.cityCanvas, 0, 0);
 
-    // Player dot + heading arrow
-    const px = this.car.position.x * scaleX;
-    const pz = this.car.position.z * scaleZ;
-
-    // Outer glow
+    // --- Car dot (yellow) ---
+    const cx = this.car.position.x * scaleX;
+    const cz = this.car.position.z * scaleZ;
     ctx.beginPath();
-    ctx.arc(px, pz, DOT_RADIUS + 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 80, 80, 0.35)';
+    ctx.arc(cx, cz, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = '#f5c842';
     ctx.fill();
 
-    // Solid dot
-    ctx.beginPath();
-    ctx.arc(px, pz, DOT_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff4040';
-    ctx.fill();
+    // Car heading arrow
+    this.drawArrow(ctx, cx, cz, -this.car.heading, '#f5c842');
 
-    // Heading arrow — CarSystem.heading: 0 = +Z, increasing = CCW
-    // On the minimap +Z maps to +Y (down), so we negate to get screen angle
-    const angle = -this.carHeading();
+    // --- Player dot (red) — only when on foot ---
+    if (!this.car.isOccupied) {
+      const px = this.walker.position.x * scaleX;
+      const pz = this.walker.position.z * scaleZ;
+
+      ctx.beginPath();
+      ctx.arc(px, pz, DOT_RADIUS + 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 80, 80, 0.35)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(px, pz, DOT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff4040';
+      ctx.fill();
+
+      this.drawArrow(ctx, px, pz, -this.walker.heading, '#ffffff');
+    }
+  }
+
+  private drawArrow(ctx: CanvasRenderingContext2D, px: number, pz: number, angle: number, color: string): void {
     const ax = px + Math.sin(angle) * ARROW_SIZE;
     const az = pz + Math.cos(angle) * ARROW_SIZE;
 
@@ -142,13 +141,7 @@ export class MinimapSystem implements GameSystem {
       pz - Math.sin(angle - Math.PI * 0.8) * (ARROW_SIZE * 0.55),
     );
     ctx.closePath();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = color;
     ctx.fill();
-  }
-
-  /** Read heading from CarSystem (private field — accessed via reflection). */
-  private carHeading(): number {
-    // CarSystem exposes `heading` as a private field; we read it via bracket access
-    return (this.car as unknown as { heading: number }).heading;
   }
 }
