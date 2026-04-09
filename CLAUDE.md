@@ -50,3 +50,26 @@ Systems are registered via `game.addSystem()` and run in registration order.
 
 ## Minimap
 Rendered as a fixed 180×180px HTML canvas (bottom-right corner). Pre-renders the city once on init, then each frame draws the player dot and heading arrow on top.
+
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: GitHub Actions + SSH over Tailscale
+- Production URL: https://citygame.goranmitev.com
+- Deploy workflow: .github/workflows/deploy.yml
+- Deploy status command: HTTP health check
+- Merge method: merge
+- Project type: web app (static, Vite build → dist/)
+- Post-deploy health check: https://citygame.goranmitev.com
+
+### Custom deploy hooks
+- Pre-merge: none
+- Deploy trigger: automatic on push to main
+- Deploy status: poll production URL
+- Health check: https://citygame.goranmitev.com
+
+### Required GitHub Secrets
+Set these in your repo Settings → Secrets → Actions:
+- `TS_OAUTH_CLIENT_ID` — Tailscale OAuth client ID (Settings → OAuth clients, tag: `tag:ci`)
+- `TS_OAUTH_SECRET` — Tailscale OAuth client secret
+- `DEPLOY_HOST` — Tailscale hostname or IP of the target server
+- `DEPLOY_USER` — SSH username on the target server
+- `DEPLOY_SSH_KEY` — Private SSH key (add the public key to `~/.ssh/authorized_keys` on the server)
