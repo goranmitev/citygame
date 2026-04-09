@@ -4,11 +4,7 @@ import { Game, GameSystem } from '../core/Game';
 import { WalkSystem } from '../systems/WalkSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
-
-const ROAD_COLOR = 0x6b6b6b;
-const SIDEWALK_COLOR = 0x999990;
-const GROUND_COLOR = 0x4a5a3a;
-const MARKING_COLOR = 0xccccaa;
+import { ROAD_COLOR, SIDEWALK_COLOR, GROUND_COLOR, MARKING_COLOR } from '../constants';
 
 /**
  * Assembles the city using merged geometry for maximum draw-call efficiency.

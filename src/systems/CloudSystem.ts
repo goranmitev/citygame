@@ -1,18 +1,11 @@
 import * as THREE from 'three';
 import { Game, GameSystem } from '../core/Game';
-
-const CLOUD_COUNT = 40;
-const CLOUD_MIN_Y = 70;
-const CLOUD_MAX_Y = 130;
-const CLOUD_DRIFT_SPEED = 3.0;   // world units / second
-const CLOUD_DRIFT_DIR_X = 1.0;
-const CLOUD_DRIFT_DIR_Z = 0.25;
-const SPRITES_PER_CLOUD = 5;     // sprites composing one cloud puff group
-const SPRITE_MIN_SIZE = 30;
-const SPRITE_MAX_SIZE = 60;
-const CLOUD_SPREAD_X = 30;       // how wide one cloud group is
-const CLOUD_SPREAD_Z = 12;
-const FIELD_HALF = 300;          // wrap boundary around city centre
+import {
+  CLOUD_COUNT, CLOUD_MIN_Y, CLOUD_MAX_Y, CLOUD_DRIFT_SPEED,
+  CLOUD_DRIFT_DIR_X, CLOUD_DRIFT_DIR_Z, SPRITES_PER_CLOUD,
+  SPRITE_MIN_SIZE, SPRITE_MAX_SIZE, CLOUD_SPREAD_X, CLOUD_SPREAD_Z,
+  CLOUD_FIELD_HALF as FIELD_HALF,
+} from '../constants';
 
 /**
  * Sprite-based clouds. Each cloud is a group of billboard sprites sharing a

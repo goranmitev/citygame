@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { EventBus, Events } from './EventBus';
 
 export interface GameSystem {
   readonly name: string;
@@ -65,8 +66,39 @@ export class Game {
     cancelAnimationFrame(this.animFrameId);
   }
 
+  /**
+   * Dispose all systems and clean the scene, then re-initialize each system
+   * so the game can be restarted without a page reload.
+   * All EventBus listeners are cleared first so stale handlers don't fire.
+   */
+  reset(): void {
+    this.stop();
+
+    // Clear all EventBus subscriptions before systems re-register their handlers
+    EventBus.clear();
+
+    for (const system of this.systems) {
+      system.dispose?.();
+    }
+
+    // Clear the Three.js scene of all objects (lights, meshes, etc.)
+    while (this.scene.children.length > 0) {
+      this.scene.remove(this.scene.children[0]);
+    }
+
+    // Re-initialize every system in the same registered order
+    for (const system of this.systems) {
+      system.init?.(this);
+    }
+
+    EventBus.emit(Events.GAME_RESET, undefined);
+
+    this.start();
+  }
+
   dispose(): void {
     this.stop();
+    EventBus.clear();
     for (const system of this.systems) {
       system.dispose?.();
     }

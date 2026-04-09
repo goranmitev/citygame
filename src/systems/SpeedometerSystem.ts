@@ -1,9 +1,6 @@
 import { Game, GameSystem } from '../core/Game';
 import { CarSystem } from './CarSystem';
-
-const SIZE = 120;       // canvas px
-const PADDING = 10;     // px from corner
-const MAX_SPEED = 160;  // km/h — full dial
+import { SPEEDO_SIZE as SIZE, SPEEDO_PADDING as PADDING, SPEEDO_MAX_SPEED as MAX_SPEED } from '../constants';
 
 export class SpeedometerSystem implements GameSystem {
   readonly name = 'speedometer';

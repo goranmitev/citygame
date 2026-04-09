@@ -3,11 +3,7 @@ import { WalkSystem } from './WalkSystem';
 import { CarSystem } from './CarSystem';
 import { CityBuilder } from '../city/CityBuilder';
 import { CityLayoutData } from '../city/CityLayout';
-
-const MAP_SIZE = 180;
-const PADDING = 10;
-const DOT_RADIUS = 4;
-const ARROW_SIZE = 7;
+import { MAP_SIZE, MAP_PADDING, MAP_DOT_RADIUS, MAP_ARROW_SIZE } from '../constants';
 
 export class MinimapSystem implements GameSystem {
   readonly name = 'minimap';
@@ -73,8 +69,8 @@ export class MinimapSystem implements GameSystem {
 
     Object.assign(this.canvas.style, {
       position: 'fixed',
-      bottom: `${PADDING}px`,
-      right: `${PADDING}px`,
+      bottom: `${MAP_PADDING}px`,
+      right: `${MAP_PADDING}px`,
       width: `${MAP_SIZE}px`,
       height: `${MAP_SIZE}px`,
       borderRadius: '6px',
@@ -100,7 +96,7 @@ export class MinimapSystem implements GameSystem {
     const cx = this.car.position.x * scaleX;
     const cz = this.car.position.z * scaleZ;
     ctx.beginPath();
-    ctx.arc(cx, cz, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.arc(cx, cz, MAP_DOT_RADIUS, 0, Math.PI * 2);
     ctx.fillStyle = '#f5c842';
     ctx.fill();
 
@@ -113,12 +109,12 @@ export class MinimapSystem implements GameSystem {
       const pz = this.walker.position.z * scaleZ;
 
       ctx.beginPath();
-      ctx.arc(px, pz, DOT_RADIUS + 2, 0, Math.PI * 2);
+      ctx.arc(px, pz, MAP_DOT_RADIUS + 2, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 80, 80, 0.35)';
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(px, pz, DOT_RADIUS, 0, Math.PI * 2);
+      ctx.arc(px, pz, MAP_DOT_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = '#ff4040';
       ctx.fill();
 
@@ -127,18 +123,18 @@ export class MinimapSystem implements GameSystem {
   }
 
   private drawArrow(ctx: CanvasRenderingContext2D, px: number, pz: number, angle: number, color: string): void {
-    const ax = px + Math.sin(angle) * ARROW_SIZE;
-    const az = pz + Math.cos(angle) * ARROW_SIZE;
+    const ax = px + Math.sin(angle) * MAP_ARROW_SIZE;
+    const az = pz + Math.cos(angle) * MAP_ARROW_SIZE;
 
     ctx.beginPath();
     ctx.moveTo(ax, az);
     ctx.lineTo(
-      px + Math.cos(angle + Math.PI * 0.8) * (ARROW_SIZE * 0.55),
-      pz - Math.sin(angle + Math.PI * 0.8) * (ARROW_SIZE * 0.55),
+      px + Math.cos(angle + Math.PI * 0.8) * (MAP_ARROW_SIZE * 0.55),
+      pz - Math.sin(angle + Math.PI * 0.8) * (MAP_ARROW_SIZE * 0.55),
     );
     ctx.lineTo(
-      px + Math.cos(angle - Math.PI * 0.8) * (ARROW_SIZE * 0.55),
-      pz - Math.sin(angle - Math.PI * 0.8) * (ARROW_SIZE * 0.55),
+      px + Math.cos(angle - Math.PI * 0.8) * (MAP_ARROW_SIZE * 0.55),
+      pz - Math.sin(angle - Math.PI * 0.8) * (MAP_ARROW_SIZE * 0.55),
     );
     ctx.closePath();
     ctx.fillStyle = color;

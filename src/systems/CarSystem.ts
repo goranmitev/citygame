@@ -1,30 +1,16 @@
 import * as THREE from 'three';
 import { Game, GameSystem } from '../core/Game';
+import { EventBus, Events } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
 import { SceneSystem } from './SceneSystem';
-
-// --- Tuning constants ---
-const CAR_HALF_W = 1.0;   // half-width for collision
-const CAR_HALF_L = 2.2;   // half-length for collision
-const CAR_HEIGHT = 0.8;   // collision box height
-
-const MAX_SPEED_FWD = 22;  // m/s (~80 km/h)
-const MAX_SPEED_REV = 6;
-const ACCEL = 14;          // m/s² while throttle pressed
-const BRAKE_FORCE = 20;    // m/s² while braking
-const DRAG = 10;           // passive deceleration when no input
-const STEER_SPEED = 3.2;   // rad/s max turn rate at low speed
-const SPEED_STEER_FACTOR = 0.03; // reduces steering at high speed
-
-// Camera spring-arm (used when player is driving)
-const CAM_DIST = 9;
-const CAM_HEIGHT = 3.5;
-const CAM_LERP = 8;
-
-// Mouse look
-const MOUSE_SENSITIVITY = 0.003;
-const PITCH_MIN = -0.3;
-const PITCH_MAX = 0.6;
+import {
+  CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
+  CAR_MAX_SPEED_FWD, CAR_MAX_SPEED_REV,
+  CAR_ACCEL, CAR_BRAKE_FORCE, CAR_DRAG,
+  CAR_STEER_SPEED, CAR_SPEED_STEER_FACTOR,
+  CAR_CAM_DIST, CAR_CAM_HEIGHT, CAR_CAM_LERP,
+  CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
+} from '../constants';
 
 export class CarSystem implements GameSystem {
   readonly name = 'car';
@@ -32,7 +18,7 @@ export class CarSystem implements GameSystem {
   // World position (feet of car, Y=0)
   readonly position = new THREE.Vector3(0, 0, 0);
 
-  // Public so WalkSystem can read heading for minimap / entry logic
+  // Public so minimap can read heading
   heading = 0;
 
   // Whether a player is sitting in the car
@@ -64,6 +50,10 @@ export class CarSystem implements GameSystem {
     this.sceneSystem = game.getSystem<SceneSystem>('scene')!;
     this.scene = game.scene;
     this.buildCarMesh();
+
+    // React to enter/exit events emitted by WalkSystem
+    EventBus.on(Events.CAR_ENTERED, this.onEntered);
+    EventBus.on(Events.CAR_EXITED, this.onExited);
   }
 
   /** Speed in km/h (always positive). */
@@ -75,7 +65,6 @@ export class CarSystem implements GameSystem {
   entryPoint(): THREE.Vector3 {
     const sinH = Math.sin(this.heading);
     const cosH = Math.cos(this.heading);
-    // Left side of car in car-local space: (-1.8, 0, 0) rotated by heading
     return new THREE.Vector3(
       this.position.x - cosH * 1.8,
       0,
@@ -90,7 +79,6 @@ export class CarSystem implements GameSystem {
   getWorldBox(): THREE.Box3 {
     const sinH = Math.sin(this.heading);
     const cosH = Math.cos(this.heading);
-    // Four corners of the car footprint in world space
     const corners = [
       [ CAR_HALF_W,  CAR_HALF_L],
       [-CAR_HALF_W,  CAR_HALF_L],
@@ -104,12 +92,12 @@ export class CarSystem implements GameSystem {
     const xs = corners.map((c) => c.x);
     const zs = corners.map((c) => c.z);
     return new THREE.Box3(
-      new THREE.Vector3(Math.min(...xs), 0,           Math.min(...zs)),
-      new THREE.Vector3(Math.max(...xs), CAR_HEIGHT,  Math.max(...zs)),
+      new THREE.Vector3(Math.min(...xs), 0,          Math.min(...zs)),
+      new THREE.Vector3(Math.max(...xs), CAR_HEIGHT, Math.max(...zs)),
     );
   }
 
-  /** Bring the car to an immediate stop (called on exit). */
+  /** Bring the car to an immediate stop. */
   stop(): void {
     this.speed = 0;
     this.steer = 0;
@@ -135,12 +123,41 @@ export class CarSystem implements GameSystem {
       this.updatePhysics(delta);
       this.updateCamera(delta);
       this.sceneSystem.updateShadowTarget(this.position.x, this.position.z);
-      // Do NOT call input.resetDeltas() here — WalkSystem runs after us and
-      // needs interactPressed to detect the E key for exiting the car.
     }
-    // Always keep mesh in sync (visible even when unoccupied)
     this.updateCarMesh();
   }
+
+  dispose(): void {
+    EventBus.off(Events.CAR_ENTERED, this.onEntered);
+    EventBus.off(Events.CAR_EXITED, this.onExited);
+
+    // Dispose all geometries and materials in the car group
+    this.carGroup.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m.dispose());
+        } else {
+          obj.material.dispose();
+        }
+      }
+    });
+    this.scene.remove(this.carGroup);
+  }
+
+  // ---------------------------------------------------------------------------
+  // EventBus handlers
+  // ---------------------------------------------------------------------------
+
+  private onEntered = (): void => {
+    this.isOccupied = true;
+    this.snapCamera();
+  };
+
+  private onExited = (): void => {
+    this.isOccupied = false;
+    this.stop();
+  };
 
   // ---------------------------------------------------------------------------
 
@@ -151,28 +168,28 @@ export class CarSystem implements GameSystem {
     const steerInput = state.left ? -1 : state.right ? 1 : 0;
 
     if (throttle > 0) {
-      this.speed += ACCEL * delta;
+      this.speed += CAR_ACCEL * delta;
     } else if (brake > 0) {
       if (this.speed > 0.1) {
-        this.speed -= BRAKE_FORCE * delta;
+        this.speed -= CAR_BRAKE_FORCE * delta;
       } else {
-        this.speed -= ACCEL * delta;
+        this.speed -= CAR_ACCEL * delta;
       }
     } else {
       if (this.speed > 0) {
-        this.speed = Math.max(0, this.speed - DRAG * delta);
+        this.speed = Math.max(0, this.speed - CAR_DRAG * delta);
       } else if (this.speed < 0) {
-        this.speed = Math.min(0, this.speed + DRAG * delta);
+        this.speed = Math.min(0, this.speed + CAR_DRAG * delta);
       }
     }
 
-    this.speed = Math.max(-MAX_SPEED_REV, Math.min(MAX_SPEED_FWD, this.speed));
+    this.speed = Math.max(-CAR_MAX_SPEED_REV, Math.min(CAR_MAX_SPEED_FWD, this.speed));
 
     const targetSteer = steerInput;
     this.steer += (targetSteer - this.steer) * Math.min(1, 8 * delta);
 
-    const speedFactor = Math.abs(this.speed) / (MAX_SPEED_FWD * 0.5);
-    const steerRate = STEER_SPEED / (1 + speedFactor * SPEED_STEER_FACTOR * 60);
+    const speedFactor = Math.abs(this.speed) / (CAR_MAX_SPEED_FWD * 0.5);
+    const steerRate = CAR_STEER_SPEED / (1 + speedFactor * CAR_SPEED_STEER_FACTOR * 60);
     const turnDelta = this.steer * steerRate * delta * Math.sign(this.speed || 1);
     this.heading -= turnDelta;
 
@@ -189,9 +206,10 @@ export class CarSystem implements GameSystem {
     const nx = this.position.x + dx;
     const nz = this.position.z + dz;
 
-    const carMin = new THREE.Vector3(nx - CAR_HALF_W, 0, nz - CAR_HALF_L);
-    const carMax = new THREE.Vector3(nx + CAR_HALF_W, CAR_HEIGHT, nz + CAR_HALF_L);
-    const carBox = new THREE.Box3(carMin, carMax);
+    const carBox = new THREE.Box3(
+      new THREE.Vector3(nx - CAR_HALF_W, 0,          nz - CAR_HALF_L),
+      new THREE.Vector3(nx + CAR_HALF_W, CAR_HEIGHT, nz + CAR_HALF_L),
+    );
 
     for (const box of this.colliders) {
       if (carBox.intersectsBox(box)) {
@@ -212,9 +230,9 @@ export class CarSystem implements GameSystem {
   private updateCamera(delta: number): void {
     const { mouseDX, mouseDY } = this.input.state;
 
-    this.camYaw -= mouseDX * MOUSE_SENSITIVITY;
-    this.camPitch += mouseDY * MOUSE_SENSITIVITY;
-    this.camPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.camPitch));
+    this.camYaw -= mouseDX * CAR_MOUSE_SENSITIVITY;
+    this.camPitch += mouseDY * CAR_MOUSE_SENSITIVITY;
+    this.camPitch = Math.max(CAR_PITCH_MIN, Math.min(CAR_PITCH_MAX, this.camPitch));
 
     const angle = this.heading + this.camYaw;
     const sinA = Math.sin(angle);
@@ -222,8 +240,8 @@ export class CarSystem implements GameSystem {
 
     const pitchCos = Math.cos(this.camPitch);
     const pitchSin = Math.sin(this.camPitch);
-    const dist = CAM_DIST * pitchCos;
-    const height = CAM_HEIGHT + CAM_DIST * pitchSin;
+    const dist = CAR_CAM_DIST * pitchCos;
+    const height = CAR_CAM_HEIGHT + CAR_CAM_DIST * pitchSin;
 
     const idealPos = new THREE.Vector3(
       this.position.x - sinA * dist,
@@ -237,7 +255,7 @@ export class CarSystem implements GameSystem {
       this.position.z + cosA * 2,
     );
 
-    const t = Math.min(1, CAM_LERP * delta);
+    const t = Math.min(1, CAR_CAM_LERP * delta);
     this.camPos.lerp(idealPos, t);
     this.camTarget.lerp(lookAt, t);
 
@@ -252,9 +270,9 @@ export class CarSystem implements GameSystem {
     const sinH = Math.sin(this.heading);
     const cosH = Math.cos(this.heading);
     this.camPos.set(
-      this.position.x - sinH * CAM_DIST,
-      this.position.y + CAM_HEIGHT,
-      this.position.z - cosH * CAM_DIST,
+      this.position.x - sinH * CAR_CAM_DIST,
+      this.position.y + CAR_CAM_HEIGHT,
+      this.position.z - cosH * CAR_CAM_DIST,
     );
     this.camTarget.set(this.position.x, this.position.y + 1.2, this.position.z);
     this.camera.position.copy(this.camPos);
@@ -268,7 +286,6 @@ export class CarSystem implements GameSystem {
   private buildCarMesh(): void {
     this.carGroup = new THREE.Group();
 
-    // Body
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.4, metalness: 0.5 });
     const bodyGeo = new THREE.BoxGeometry(1.8, 0.55, 4.0);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -276,7 +293,6 @@ export class CarSystem implements GameSystem {
     body.castShadow = true;
     this.carGroup.add(body);
 
-    // Cabin
     const cabinMat = new THREE.MeshStandardMaterial({ color: 0x991818, roughness: 0.5, metalness: 0.3 });
     const cabinGeo = new THREE.BoxGeometry(1.5, 0.55, 2.2);
     const cabin = new THREE.Mesh(cabinGeo, cabinMat);
@@ -284,7 +300,6 @@ export class CarSystem implements GameSystem {
     cabin.castShadow = true;
     this.carGroup.add(cabin);
 
-    // Windows
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.7 });
 
     const windshieldGeo = new THREE.BoxGeometry(1.3, 0.45, 0.05);
@@ -299,7 +314,6 @@ export class CarSystem implements GameSystem {
     rear.rotation.x = -0.2;
     this.carGroup.add(rear);
 
-    // Wheels
     const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
     const rimMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.8 });
 
@@ -325,7 +339,6 @@ export class CarSystem implements GameSystem {
       this.carGroup.add(rim);
     }
 
-    // Headlights
     const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 1.5 });
     for (const sx of [-0.6, 0.6]) {
       const hGeo = new THREE.BoxGeometry(0.3, 0.15, 0.05);
@@ -334,7 +347,6 @@ export class CarSystem implements GameSystem {
       this.carGroup.add(h);
     }
 
-    // Taillights
     const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1111, emissive: 0xff1111, emissiveIntensity: 1.0 });
     for (const sx of [-0.6, 0.6]) {
       const tGeo = new THREE.BoxGeometry(0.3, 0.15, 0.05);
