@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Game, GameSystem } from '../core/Game';
 import { WalkSystem } from '../systems/WalkSystem';
+import { CarSystem } from '../systems/CarSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
 import { ROAD_COLOR, SIDEWALK_COLOR, GROUND_COLOR, MARKING_COLOR } from '../constants';
@@ -55,14 +56,22 @@ export class CityBuilder implements GameSystem {
     this.mergeBucket(scene, buckets.windowFrames, mats.windowFrame, false);
     this.mergeBucket(scene, buckets.roofs, mats.roof, true);
 
-    // --- Register colliders with player ---
+    // --- Register colliders and set spawn positions ---
     const player = game.getSystem<WalkSystem>('player');
+    const car = game.getSystem<CarSystem>('car');
     if (player) {
       player.addColliders(colliders);
       // Spawn in the center of the first horizontal street (width > depth = runs along X)
       const firstHStreet = this.layout.streets.find((s) => s.width > s.depth);
       const spawnX = firstHStreet ? firstHStreet.x + firstHStreet.width / 2 : this.layout.totalWidth / 2;
       const spawnZ = firstHStreet ? firstHStreet.z + firstHStreet.depth / 2 : this.layout.totalDepth / 2;
+
+      // Place car a few units to the side of the player spawn
+      if (car) {
+        car.position.set(spawnX + 4, 0, spawnZ);
+        car.snapToSpawn();
+      }
+
       player.position.set(spawnX, 0, spawnZ);
       player.snapToSpawn();
     }
