@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Game, GameSystem } from '../core/Game';
 import { CityBuilder } from '../city/CityBuilder';
+import { CarSystem } from './CarSystem';
 
 // Traffic light phase durations (seconds)
 const GREEN_DURATION = 8;
@@ -14,6 +15,17 @@ const LIGHT_OFF    = 0x222222;
 
 // Stop sign threshold — streets narrower than this get stop signs instead of lights
 const STOP_SIGN_WIDTH_THRESHOLD = 7.5;
+
+// Collision box half-extents for a sign/light pole (XZ plane)
+const KNOCKABLE_HALF = 0.18;
+// How high car must overlap to register a hit (avoids false positives)
+const KNOCKABLE_HEIGHT = 2.0;
+// Gravity for knocked objects
+const GRAVITY = -18;
+// Bounce damping when hitting ground
+const BOUNCE_DAMPING = 0.35;
+// Angular spin rate when knocked (rad/s)
+const SPIN_BASE = 4.0;
 
 type Phase = 'green' | 'yellow' | 'red';
 
@@ -39,14 +51,31 @@ interface Intersection {
   vStreetW: number;
 }
 
+type KnockState = 'standing' | 'flying' | 'fading' | 'done';
+
+interface KnockableObject {
+  group: THREE.Group;
+  /** World-space XZ position (base) — used for broad-phase collision */
+  baseX: number;
+  baseZ: number;
+  state: KnockState;
+  vel: THREE.Vector3;
+  angularVel: THREE.Vector3;
+  originY: number;
+  opacity: number;
+}
+
 export class TrafficSystem implements GameSystem {
   readonly name = 'traffic';
 
   private intersections: Intersection[] = [];
+  private knockables: KnockableObject[] = [];
+  private car!: CarSystem;
   private scene!: THREE.Scene;
 
   init(game: Game): void {
     this.scene = game.scene;
+    this.car = game.getSystem<CarSystem>('car')!;
     const city = game.getSystem<CityBuilder>('city');
     if (!city) return;
 
@@ -137,6 +166,84 @@ export class TrafficSystem implements GameSystem {
         this.applyPhases(inter);
       }
     }
+
+    this.updateKnockables(delta);
+  }
+
+  private updateKnockables(delta: number): void {
+    const carBox = this.car.getWorldBox();
+    const carVel = this.car.getVelocity();
+
+    for (const obj of this.knockables) {
+      if (obj.state === 'standing') {
+        const dx = obj.baseX - this.car.position.x;
+        const dz = obj.baseZ - this.car.position.z;
+        if (dx * dx + dz * dz > 16) continue;
+
+        const objBox = new THREE.Box3(
+          new THREE.Vector3(obj.baseX - KNOCKABLE_HALF, 0, obj.baseZ - KNOCKABLE_HALF),
+          new THREE.Vector3(obj.baseX + KNOCKABLE_HALF, KNOCKABLE_HEIGHT, obj.baseZ + KNOCKABLE_HALF),
+        );
+
+        if (carBox.intersectsBox(objBox)) {
+          obj.state = 'flying';
+          const speed = carVel.length();
+          obj.vel.set(
+            carVel.x * 0.6 + (Math.random() - 0.5) * 2,
+            speed * 0.5 + 3,
+            carVel.z * 0.6 + (Math.random() - 0.5) * 2,
+          );
+          obj.angularVel.set(
+            (Math.random() - 0.5) * SPIN_BASE,
+            (Math.random() - 0.5) * SPIN_BASE * 0.5,
+            (Math.random() - 0.5) * SPIN_BASE,
+          );
+        }
+      } else if (obj.state === 'flying') {
+        obj.vel.y += GRAVITY * delta;
+
+        obj.group.position.x += obj.vel.x * delta;
+        obj.group.position.y += obj.vel.y * delta;
+        obj.group.position.z += obj.vel.z * delta;
+
+        obj.group.rotation.x += obj.angularVel.x * delta;
+        obj.group.rotation.y += obj.angularVel.y * delta;
+        obj.group.rotation.z += obj.angularVel.z * delta;
+
+        if (obj.group.position.y <= obj.originY) {
+          obj.group.position.y = obj.originY;
+          if (Math.abs(obj.vel.y) > 0.5) {
+            obj.vel.y *= -BOUNCE_DAMPING;
+            obj.vel.x *= 0.7;
+            obj.vel.z *= 0.7;
+            obj.angularVel.multiplyScalar(0.6);
+          } else {
+            // Start fading — make all materials transparent
+            obj.group.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                const mat = child.material as THREE.MeshStandardMaterial;
+                mat.transparent = true;
+              }
+            });
+            obj.opacity = 1;
+            obj.state = 'fading';
+          }
+        }
+      } else if (obj.state === 'fading') {
+        obj.opacity -= delta / 1.2; // fade over 1.2 seconds
+        if (obj.opacity <= 0) {
+          this.scene.remove(obj.group);
+          obj.state = 'done';
+        } else {
+          obj.group.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              (child.material as THREE.MeshStandardMaterial).opacity = obj.opacity;
+            }
+          });
+        }
+      }
+      // 'done' — removed from scene, no update needed
+    }
   }
 
   dispose(): void {
@@ -151,7 +258,17 @@ export class TrafficSystem implements GameSystem {
         this.scene.remove(light.group);
       }
     }
+    for (const obj of this.knockables) {
+      obj.group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      });
+      this.scene.remove(obj.group);
+    }
     this.intersections = [];
+    this.knockables = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -253,6 +370,16 @@ export class TrafficSystem implements GameSystem {
       light.group.position.set(corner.x, 0, corner.z);
       this.scene.add(light.group);
       inter.lights.push(light);
+      this.knockables.push({
+        group: light.group,
+        baseX: corner.x,
+        baseZ: corner.z,
+        state: 'standing',
+        vel: new THREE.Vector3(),
+        angularVel: new THREE.Vector3(),
+        originY: 0,
+        opacity: 1,
+      });
     }
 
     // Set initial state
@@ -280,7 +407,18 @@ export class TrafficSystem implements GameSystem {
     ];
 
     for (const corner of corners) {
-      this.scene.add(this.buildStopSign(corner.x, corner.z, 0));
+      const group = this.buildStopSign(corner.x, corner.z, 0);
+      this.scene.add(group);
+      this.knockables.push({
+        group,
+        baseX: corner.x,
+        baseZ: corner.z,
+        state: 'standing',
+        vel: new THREE.Vector3(),
+        angularVel: new THREE.Vector3(),
+        originY: 0,
+        opacity: 1,
+      });
     }
   }
 

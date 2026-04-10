@@ -72,6 +72,13 @@ export class CarSystem implements GameSystem {
     );
   }
 
+  /** Current velocity vector (world space, m/s). */
+  getVelocity(): THREE.Vector3 {
+    const sinH = Math.sin(this.heading);
+    const cosH = Math.cos(this.heading);
+    return new THREE.Vector3(sinH * this.speed, 0, cosH * this.speed);
+  }
+
   /**
    * Returns a world-space AABB that tightly wraps the car's rotated footprint.
    * Recomputed each call — call once per frame from WalkSystem.
