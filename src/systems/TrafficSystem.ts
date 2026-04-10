@@ -1,0 +1,346 @@
+import * as THREE from 'three';
+import { Game, GameSystem } from '../core/Game';
+import { CityBuilder } from '../city/CityBuilder';
+
+// Traffic light phase durations (seconds)
+const GREEN_DURATION = 8;
+const YELLOW_DURATION = 2;
+const RED_DURATION = 10; // green + yellow of cross direction
+
+const LIGHT_RED    = 0xff2200;
+const LIGHT_YELLOW = 0xffcc00;
+const LIGHT_GREEN  = 0x22ff44;
+const LIGHT_OFF    = 0x222222;
+
+// Stop sign threshold — streets narrower than this get stop signs instead of lights
+const STOP_SIGN_WIDTH_THRESHOLD = 7.5;
+
+type Phase = 'green' | 'yellow' | 'red';
+
+interface TrafficLight {
+  group: THREE.Group;
+  /** Which street axis this light controls: 'h' = horizontal traffic flows, 'v' = vertical */
+  axis: 'h' | 'v';
+  redMesh: THREE.Mesh;
+  yellowMesh: THREE.Mesh;
+  greenMesh: THREE.Mesh;
+}
+
+interface Intersection {
+  /** Center of the intersection in world space */
+  cx: number;
+  cz: number;
+  lights: TrafficLight[];
+  /** Timer drives the phase cycle */
+  timer: number;
+  /** Current phase for horizontal-going traffic */
+  hPhase: Phase;
+  hStreetW: number;
+  vStreetW: number;
+}
+
+export class TrafficSystem implements GameSystem {
+  readonly name = 'traffic';
+
+  private intersections: Intersection[] = [];
+  private scene!: THREE.Scene;
+
+  init(game: Game): void {
+    this.scene = game.scene;
+    const city = game.getSystem<CityBuilder>('city');
+    if (!city) return;
+
+    const layout = city.layout;
+    const ROAD_FRACTION = 0.65;
+
+    // Reconstruct per-street geometry the same way CityLayout does
+    const { streets, totalWidth, totalDepth } = layout;
+
+    // Separate horizontal and vertical streets from the merged streets array
+    const hStreets = streets.filter(s => s.width > s.depth);
+    const vStreets = streets.filter(s => s.depth >= s.width);
+
+    // Sort by position for deterministic processing
+    hStreets.sort((a, b) => a.z - b.z);
+    vStreets.sort((a, b) => a.x - b.x);
+
+    for (const hSt of hStreets) {
+      for (const vSt of vStreets) {
+        // The road center for horizontal street: hSt.z + hSt.depth/2
+        // The road center for vertical street: vSt.x + vSt.width/2
+        const cx = vSt.x + vSt.width / 2;
+        const cz = hSt.z + hSt.depth / 2;
+
+        const hW = hSt.depth; // road width of horizontal street (depth dimension)
+        const vW = vSt.width; // road width of vertical street (width dimension)
+
+        // Full street width (road + sidewalks on both sides)
+        // road = street * ROAD_FRACTION, sidewalk = (street - road) / 2 each side
+        const hFullW = hW / ROAD_FRACTION;
+        const vFullW = vW / ROAD_FRACTION;
+
+        const hSideW = (hFullW - hW) / 2;
+        const vSideW = (vFullW - vW) / 2;
+
+        // Skip tiny streets with no sidewalk room
+        if (hSideW < 0.3 && vSideW < 0.3) continue;
+        if (hFullW < 1 || vFullW < 1) continue;
+
+        const useStopSign = hFullW < STOP_SIGN_WIDTH_THRESHOLD || vFullW < STOP_SIGN_WIDTH_THRESHOLD;
+
+        const intersection: Intersection = {
+          cx,
+          cz,
+          lights: [],
+          timer: 0,
+          hPhase: 'green',
+          hStreetW: hFullW,
+          vStreetW: vFullW,
+        };
+
+        if (useStopSign) {
+          // Place stop signs on the narrower street approaches
+          this.placeStopSigns(intersection, hSt, vSt, hW, vW, hSideW, vSideW, hFullW, vFullW);
+        } else {
+          // Place traffic lights at the 4 corners
+          this.placeTrafficLights(intersection, cx, cz, hW, vW, hSideW, vSideW);
+          // Offset phases so adjacent intersections aren't perfectly synchronized
+          intersection.timer = (this.intersections.length % 3) * (GREEN_DURATION / 3);
+        }
+
+        this.intersections.push(intersection);
+      }
+    }
+  }
+
+  update(delta: number): void {
+    for (const inter of this.intersections) {
+      if (inter.lights.length === 0) continue;
+
+      inter.timer += delta;
+
+      // Determine phase based on timer
+      const cycleDuration = GREEN_DURATION + YELLOW_DURATION + RED_DURATION;
+      const t = inter.timer % cycleDuration;
+
+      let hPhase: Phase;
+      if (t < GREEN_DURATION) {
+        hPhase = 'green';
+      } else if (t < GREEN_DURATION + YELLOW_DURATION) {
+        hPhase = 'yellow';
+      } else {
+        hPhase = 'red';
+      }
+
+      if (hPhase !== inter.hPhase) {
+        inter.hPhase = hPhase;
+        this.applyPhases(inter);
+      }
+    }
+  }
+
+  dispose(): void {
+    for (const inter of this.intersections) {
+      for (const light of inter.lights) {
+        light.group.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry.dispose();
+            (obj.material as THREE.Material).dispose();
+          }
+        });
+        this.scene.remove(light.group);
+      }
+    }
+    this.intersections = [];
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private applyPhases(inter: Intersection): void {
+    // Vertical-going traffic is opposite phase to horizontal
+    const vPhase: Phase = inter.hPhase === 'green' ? 'red'
+      : inter.hPhase === 'yellow' ? 'red'
+      : 'green';
+
+    for (const light of inter.lights) {
+      const phase = light.axis === 'h' ? inter.hPhase : vPhase;
+      this.setLightColor(light, phase);
+    }
+  }
+
+  private setLightColor(light: TrafficLight, phase: Phase): void {
+    const setEmissive = (mesh: THREE.Mesh, color: number, on: boolean) => {
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mat.color.setHex(on ? color : LIGHT_OFF);
+      mat.emissive.setHex(on ? color : 0x000000);
+      mat.emissiveIntensity = on ? 1.2 : 0;
+    };
+
+    setEmissive(light.redMesh,    LIGHT_RED,    phase === 'red');
+    setEmissive(light.yellowMesh, LIGHT_YELLOW, phase === 'yellow');
+    setEmissive(light.greenMesh,  LIGHT_GREEN,  phase === 'green');
+  }
+
+  /** Build a traffic light pole + housing + 3 lamps. Returns the group. */
+  private buildTrafficLightMesh(axis: 'h' | 'v'): TrafficLight {
+    const group = new THREE.Group();
+
+    // Pole
+    const poleGeo = new THREE.CylinderGeometry(0.05, 0.06, 3.5, 6);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 1.75;
+    pole.castShadow = true;
+    group.add(pole);
+
+    // Housing box
+    const housingGeo = new THREE.BoxGeometry(0.28, 0.75, 0.22);
+    const housingMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 });
+    const housing = new THREE.Mesh(housingGeo, housingMat);
+    housing.position.set(0, 3.5, 0);
+    housing.castShadow = true;
+    group.add(housing);
+
+    // Rotate housing to face traffic direction
+    // 'h' axis = horizontal traffic flows along X → lights face Z direction
+    // 'v' axis = vertical traffic flows along Z → lights face X direction
+    housing.rotation.y = axis === 'h' ? 0 : Math.PI / 2;
+
+    const makeLamp = (yOffset: number, color: number): THREE.Mesh => {
+      const geo = new THREE.SphereGeometry(0.08, 8, 6);
+      const mat = new THREE.MeshStandardMaterial({
+        color: LIGHT_OFF,
+        emissive: 0x000000,
+        emissiveIntensity: 0,
+        roughness: 0.3,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      const fwd = axis === 'h' ? 0.12 : 0;
+      const side = axis === 'v' ? 0.12 : 0;
+      mesh.position.set(side, 3.5 + yOffset, fwd);
+      group.add(mesh);
+      return mesh;
+    };
+
+    const redMesh    = makeLamp(0.25, LIGHT_RED);
+    const yellowMesh = makeLamp(0,    LIGHT_YELLOW);
+    const greenMesh  = makeLamp(-0.25, LIGHT_GREEN);
+
+    return { group, axis, redMesh, yellowMesh, greenMesh };
+  }
+
+  private placeTrafficLights(
+    inter: Intersection,
+    cx: number, cz: number,
+    hRoadW: number, vRoadW: number,
+    hSideW: number, vSideW: number,
+  ): void {
+    // 4 corners: (±vRoadW/2 ± vSideW/2, ±hRoadW/2 ± hSideW/2)
+    // Place on the corner closest to the sidewalk, facing inward
+    const hHalf = hRoadW / 2;
+    const vHalf = vRoadW / 2;
+    const sideOffset = 0.5; // inset from outer sidewalk edge
+
+    const corners = [
+      { x: cx - vHalf - Math.max(vSideW * 0.5, 0.4), z: cz - hHalf - Math.max(hSideW * 0.5, 0.4), axis: 'h' as const },
+      { x: cx + vHalf + Math.max(vSideW * 0.5, 0.4), z: cz - hHalf - Math.max(hSideW * 0.5, 0.4), axis: 'h' as const },
+      { x: cx - vHalf - Math.max(vSideW * 0.5, 0.4), z: cz + hHalf + Math.max(hSideW * 0.5, 0.4), axis: 'v' as const },
+      { x: cx + vHalf + Math.max(vSideW * 0.5, 0.4), z: cz + hHalf + Math.max(hSideW * 0.5, 0.4), axis: 'v' as const },
+    ];
+
+    for (const corner of corners) {
+      const light = this.buildTrafficLightMesh(corner.axis);
+      light.group.position.set(corner.x, 0, corner.z);
+      this.scene.add(light.group);
+      inter.lights.push(light);
+    }
+
+    // Set initial state
+    this.applyPhases(inter);
+  }
+
+  private placeStopSigns(
+    inter: Intersection,
+    hSt: { x: number; z: number; width: number; depth: number },
+    vSt: { x: number; z: number; width: number; depth: number },
+    hRoadW: number, vRoadW: number,
+    hSideW: number, vSideW: number,
+    hFullW: number, vFullW: number,
+  ): void {
+    const { cx, cz } = inter;
+    const hHalf = hRoadW / 2;
+    const vHalf = vRoadW / 2;
+
+    // Same corner positions as traffic lights — on the sidewalk at each corner
+    const corners = [
+      { x: cx - vHalf - Math.max(vSideW * 0.5, 0.4), z: cz - hHalf - Math.max(hSideW * 0.5, 0.4) },
+      { x: cx + vHalf + Math.max(vSideW * 0.5, 0.4), z: cz - hHalf - Math.max(hSideW * 0.5, 0.4) },
+      { x: cx - vHalf - Math.max(vSideW * 0.5, 0.4), z: cz + hHalf + Math.max(hSideW * 0.5, 0.4) },
+      { x: cx + vHalf + Math.max(vSideW * 0.5, 0.4), z: cz + hHalf + Math.max(hSideW * 0.5, 0.4) },
+    ];
+
+    for (const corner of corners) {
+      this.scene.add(this.buildStopSign(corner.x, corner.z, 0));
+    }
+  }
+
+  private buildStopSign(x: number, z: number, rotation: number): THREE.Group {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = rotation;
+
+    // Pole
+    const poleGeo = new THREE.CylinderGeometry(0.04, 0.05, 2.15, 6);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.7 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 0.975;
+    pole.castShadow = true;
+    group.add(pole);
+
+    // Canvas texture with red background, white border and "STOP" text
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+
+    // Draw octagon
+    const cx2 = 64, cy2 = 64, r = 58;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI / 8) + (i * Math.PI / 4);
+      const px = cx2 + r * Math.cos(angle);
+      const py = cy2 + r * Math.sin(angle);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#cc1111';
+    ctx.fill();
+    // White border inset
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    // "STOP" text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STOP', 64, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const signGeo = new THREE.PlaneGeometry(0.6, 0.6);
+    const signMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.5, transparent: true, alphaTest: 0.5 });
+
+    // Front face
+    const signFront = new THREE.Mesh(signGeo, signMat);
+    signFront.position.set(0, 2.3, 0.01);
+    group.add(signFront);
+
+    // Back face — flipped 180° so text reads correctly from both sides
+    const signBack = new THREE.Mesh(signGeo, signMat);
+    signBack.position.set(0, 2.3, -0.01);
+    signBack.rotation.y = Math.PI;
+    group.add(signBack);
+
+    return group;
+  }
+}

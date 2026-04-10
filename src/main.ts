@@ -7,6 +7,7 @@ import { CityBuilder } from './city/CityBuilder';
 import { CloudSystem } from './systems/CloudSystem';
 import { MinimapSystem } from './systems/MinimapSystem';
 import { SpeedometerSystem } from './systems/SpeedometerSystem';
+import { TrafficSystem } from './systems/TrafficSystem';
 import { CITY_GRID_X, CITY_GRID_Z, CITY_SEED, CITY_CENTRE_X, CITY_CENTRE_Z } from './constants';
 
 const game = new Game();
@@ -20,5 +21,6 @@ game
   .addSystem(new CityBuilder(CITY_GRID_X, CITY_GRID_Z, CITY_SEED))
   .addSystem(new MinimapSystem())
   .addSystem(new SpeedometerSystem())
+  .addSystem(new TrafficSystem())    // 'traffic' — must come after CityBuilder
   .addSystem(new CloudSystem(CITY_CENTRE_X, CITY_CENTRE_Z))
   .start();
