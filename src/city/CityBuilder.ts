@@ -5,6 +5,7 @@ import { WalkSystem } from '../systems/WalkSystem';
 import { CarSystem } from '../systems/CarSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
+import { buildPark, getParkMaterials, mergeParkGeos } from './ParkFactory';
 import { ROAD_COLOR, SIDEWALK_COLOR, GROUND_COLOR, MARKING_COLOR } from '../constants';
 
 /**
@@ -37,14 +38,31 @@ export class CityBuilder implements GameSystem {
     // --- Sidewalks: merge all into 1 mesh ---
     this.createSidewalks(scene);
 
-    // --- Buildings: accumulate geometry, merge by material ---
+    // --- Buildings and parks ---
     const buckets = createBuckets();
     let plotSeed = this.seed * 1000;
 
+    // Accumulate park geometry across all parks, merge into shared meshes
+    const parkGrass: THREE.BufferGeometry[] = [];
+    const parkPaths: THREE.BufferGeometry[] = [];
+    const parkTrunks: THREE.BufferGeometry[] = [];
+    const parkLeaves: THREE.BufferGeometry[] = [];
+    const parkBenches: THREE.BufferGeometry[] = [];
+
     for (const block of this.layout.blocks) {
-      for (const plot of block.plots) {
-        const collider = pushBuilding(buckets, plot, plotSeed++);
-        colliders.push(collider);
+      if (block.isPark) {
+        const pg = buildPark(block, plotSeed++);
+        parkGrass.push(...pg.grassGeos);
+        parkPaths.push(...pg.pathGeos);
+        parkTrunks.push(...pg.trunkGeos);
+        parkLeaves.push(...pg.leafGeos);
+        parkBenches.push(...pg.benchGeos);
+        for (const col of pg.treeColliders) colliders.push(col);
+      } else {
+        for (const plot of block.plots) {
+          const collider = pushBuilding(buckets, plot, plotSeed++);
+          colliders.push(collider);
+        }
       }
     }
 
@@ -55,6 +73,13 @@ export class CityBuilder implements GameSystem {
     this.mergeBucket(scene, buckets.windows, mats.window, false);
     this.mergeBucket(scene, buckets.windowFrames, mats.windowFrame, false);
     this.mergeBucket(scene, buckets.roofs, mats.roof, true);
+
+    const pm = getParkMaterials();
+    mergeParkGeos(scene, parkGrass, pm.grass, false);
+    mergeParkGeos(scene, parkPaths, pm.path, false);
+    mergeParkGeos(scene, parkTrunks, pm.trunk, true);
+    mergeParkGeos(scene, parkLeaves, pm.leaves, true);
+    mergeParkGeos(scene, parkBenches, pm.bench, true);
 
     // --- Register colliders and set spawn positions ---
     const player = game.getSystem<WalkSystem>('player');

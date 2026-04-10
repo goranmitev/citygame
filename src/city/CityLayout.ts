@@ -8,6 +8,8 @@ export interface BlockDef {
   depth: number;
   /** Building plots inside this block */
   plots: PlotDef[];
+  /** Whether this block is a park (no buildings) */
+  isPark?: boolean;
 }
 
 export interface PlotDef {
@@ -113,16 +115,29 @@ export function generateCityLayout(
   const streets: StreetSegment[] = [];
   const sidewalks: StreetSegment[] = [];
 
+  // Pick 3-4 random block indices to be parks (avoid edge blocks)
+  const totalBlocks = gridX * gridZ;
+  const parkCount = Math.min(4, Math.max(3, Math.floor(totalBlocks * 0.05)));
+  const parkIndices = new Set<number>();
+  while (parkIndices.size < parkCount) {
+    const i = Math.floor(rng() * (gridX - 2)) + 1;
+    const j = Math.floor(rng() * (gridZ - 2)) + 1;
+    parkIndices.add(i * gridZ + j);
+  }
+
   // Generate blocks and their building plots
+  let blockIndex = 0;
   for (let i = 0; i < gridX; i++) {
     for (let j = 0; j < gridZ; j++) {
       const bx = blockXPositions[i];
       const bz = blockZPositions[j];
       const bw = blockWidths[i];
       const bd = blockDepths[j];
+      const isPark = parkIndices.has(blockIndex);
 
-      const plots = subdividePlots(rng, bx, bz, bw, bd, PLOT_MARGIN, MIN_PLOT_WIDTH, MAX_PLOT_WIDTH);
-      blocks.push({ x: bx, z: bz, width: bw, depth: bd, plots });
+      const plots = isPark ? [] : subdividePlots(rng, bx, bz, bw, bd, PLOT_MARGIN, MIN_PLOT_WIDTH, MAX_PLOT_WIDTH);
+      blocks.push({ x: bx, z: bz, width: bw, depth: bd, plots, isPark });
+      blockIndex++;
     }
   }
 

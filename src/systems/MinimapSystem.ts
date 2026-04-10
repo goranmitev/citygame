@@ -56,8 +56,8 @@ export class MinimapSystem implements GameSystem {
       ctx.fillRect(sw.x * scaleX, sw.z * scaleZ, sw.width * scaleX, sw.depth * scaleZ);
     }
 
-    ctx.fillStyle = '#8b9eb5';
     for (const block of this.layout.blocks) {
+      ctx.fillStyle = block.isPark ? '#4a8a2a' : '#8b9eb5';
       ctx.fillRect(block.x * scaleX, block.z * scaleZ, block.width * scaleX, block.depth * scaleZ);
     }
   }
