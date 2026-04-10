@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { Game, GameSystem } from '../core/Game';
 import { WalkSystem } from '../systems/WalkSystem';
 import { CarSystem } from '../systems/CarSystem';
+import { PedestrianSystem } from '../systems/PedestrianSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
 import { buildPark, getParkMaterials, mergeParkGeos } from './ParkFactory';
@@ -84,6 +85,13 @@ export class CityBuilder implements GameSystem {
     // --- Register colliders and set spawn positions ---
     const player = game.getSystem<WalkSystem>('player');
     const car = game.getSystem<CarSystem>('car');
+    const pedestrian = game.getSystem<PedestrianSystem>('pedestrian');
+
+    // Always wire up pedestrian sidewalks — independent of player system
+    if (pedestrian) {
+      pedestrian.setSidewalks(this.layout.sidewalks);
+    }
+
     if (player) {
       player.addColliders(colliders);
       // Spawn in the center of the first horizontal street (width > depth = runs along X)
@@ -91,7 +99,6 @@ export class CityBuilder implements GameSystem {
       const spawnX = firstHStreet ? firstHStreet.x + firstHStreet.width / 2 : this.layout.totalWidth / 2;
       const spawnZ = firstHStreet ? firstHStreet.z + firstHStreet.depth / 2 : this.layout.totalDepth / 2;
 
-      // Place car a few units to the side of the player spawn
       if (car) {
         car.position.set(spawnX + 4, 0, spawnZ);
         car.snapToSpawn();
