@@ -97,12 +97,14 @@ export class CityBuilder implements GameSystem {
 
     if (player) {
       player.addColliders(colliders);
+      player.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
       // Spawn in the center of the first horizontal street (width > depth = runs along X)
       const firstHStreet = this.layout.streets.find((s) => s.width > s.depth);
       const spawnX = firstHStreet ? firstHStreet.x + firstHStreet.width / 2 : this.layout.totalWidth / 2;
       const spawnZ = firstHStreet ? firstHStreet.z + firstHStreet.depth / 2 : this.layout.totalDepth / 2;
 
       if (car) {
+        car.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
         car.position.set(spawnX + 4, 0, spawnZ);
         car.snapToSpawn();
       }
@@ -270,6 +272,8 @@ export class CityBuilder implements GameSystem {
     // Crossing depth in the direction away from the intersection
     const CROSSING_D = N_STRIPES * STRIPE_W + (N_STRIPES - 1) * STRIPE_GAP;
 
+    const { totalWidth, totalDepth } = this.layout;
+
     for (const h of hStreets) {
       for (const v of vStreets) {
         const ix0 = v.x;
@@ -277,24 +281,26 @@ export class CityBuilder implements GameSystem {
         const iz0 = h.z;
         const iz1 = h.z + h.depth;
 
-        // South crossing: stripes run parallel to road (along Z), stacked across road width (X)
-        // Crossing zone: z in [iz1, iz1 + CROSSING_D], x in [ix0, ix1]
-        const southCenterZ = iz1 + CROSSING_D / 2;
-        for (let k = 0; ; k++) {
-          const x = ix0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
-          if (x - STRIPE_W / 2 >= ix1) break;
-          const stripeW = Math.min(STRIPE_W, ix1 - (x - STRIPE_W / 2));
-          addStripe(x - STRIPE_W / 2 + stripeW / 2, southCenterZ, stripeW, CROSSING_D);
+        // South crossing: only when there is city south of this road
+        if (iz1 < totalDepth) {
+          const southCenterZ = iz1 + CROSSING_D / 2;
+          for (let k = 0; ; k++) {
+            const x = ix0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
+            if (x - STRIPE_W / 2 >= ix1) break;
+            const stripeW = Math.min(STRIPE_W, ix1 - (x - STRIPE_W / 2));
+            addStripe(x - STRIPE_W / 2 + stripeW / 2, southCenterZ, stripeW, CROSSING_D);
+          }
         }
 
-        // East crossing: stripes run parallel to road (along X), stacked across road height (Z)
-        // Crossing zone: x in [ix1, ix1 + CROSSING_D], z in [iz0, iz1]
-        const eastCenterX = ix1 + CROSSING_D / 2;
-        for (let k = 0; ; k++) {
-          const z = iz0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
-          if (z - STRIPE_W / 2 >= iz1) break;
-          const stripeD = Math.min(STRIPE_W, iz1 - (z - STRIPE_W / 2));
-          addStripe(eastCenterX, z - STRIPE_W / 2 + stripeD / 2, CROSSING_D, stripeD);
+        // East crossing: only when there is city east of this road
+        if (ix1 < totalWidth) {
+          const eastCenterX = ix1 + CROSSING_D / 2;
+          for (let k = 0; ; k++) {
+            const z = iz0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
+            if (z - STRIPE_W / 2 >= iz1) break;
+            const stripeD = Math.min(STRIPE_W, iz1 - (z - STRIPE_W / 2));
+            addStripe(eastCenterX, z - STRIPE_W / 2 + stripeD / 2, CROSSING_D, stripeD);
+          }
         }
       }
     }
@@ -331,6 +337,7 @@ export class CityBuilder implements GameSystem {
       geo.applyMatrix4(m);
       geos.push(geo);
     }
+
 
     const merged = mergeGeometries(geos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (merged) {

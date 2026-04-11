@@ -51,6 +51,10 @@ export class WalkSystem implements GameSystem {
   // Colliders (buildings only — car collision is checked via car.getWorldBox())
   private colliders: THREE.Box3[] = [];
 
+  // City boundary limits (set by CityBuilder)
+  private boundsMin = new THREE.Vector2(-Infinity, -Infinity);
+  private boundsMax = new THREE.Vector2(Infinity, Infinity);
+
   // "Press E" prompt HUD element
   private promptEl!: HTMLDivElement;
 
@@ -89,6 +93,12 @@ export class WalkSystem implements GameSystem {
   clearColliders(): void {
     this.colliders.length = 0;
     this.car.clearColliders();
+  }
+
+  /** Set hard limits the player cannot cross (called by CityBuilder). */
+  setCityBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
+    this.boundsMin.set(minX, minZ);
+    this.boundsMax.set(maxX, maxZ);
   }
 
   update(delta: number): void {
@@ -225,8 +235,8 @@ export class WalkSystem implements GameSystem {
 
     if (pBox.intersectsBox(this.car.getWorldBox())) return;
 
-    this.position.x = nx;
-    this.position.z = nz;
+    this.position.x = Math.max(this.boundsMin.x + PLAYER_RADIUS, Math.min(this.boundsMax.x - PLAYER_RADIUS, nx));
+    this.position.z = Math.max(this.boundsMin.y + PLAYER_RADIUS, Math.min(this.boundsMax.y - PLAYER_RADIUS, nz));
   }
 
   private updateCharacterMesh(): void {

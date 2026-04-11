@@ -202,6 +202,8 @@ export function generateCityLayout(
 
   // Fill intersection corners: at each crossing of vertical street i and horizontal street j,
   // place 4 sidewalk corner quads where the sidewalk strips from both directions would meet.
+  // At city edges, also fill the gap between corners (where a crosswalk would go on interior
+  // intersections) since there is no road continuing beyond the boundary.
   for (let i = 0; i <= gridX; i++) {
     const sx = vStreetStarts[i];
     const vRoad = vRoadW[i];
@@ -222,6 +224,24 @@ export function generateCityLayout(
       sidewalks.push({ x: sx,                   z: sz + hSide + hRoad,   width: vSide, depth: hSide });
       // bottom-right corner
       sidewalks.push({ x: sx + vSide + vRoad,   z: sz + hSide + hRoad,   width: vSide, depth: hSide });
+
+      // Edge fill: bridge the gap between corner quads on city boundary sides
+      // Top edge (first h street) — fill strip between TL and TR corners
+      if (j === 0) {
+        sidewalks.push({ x: sx + vSide, z: sz, width: vRoad, depth: hSide });
+      }
+      // Bottom edge (last h street) — fill strip between BL and BR corners
+      if (j === gridZ) {
+        sidewalks.push({ x: sx + vSide, z: sz + hSide + hRoad, width: vRoad, depth: hSide });
+      }
+      // Left edge (first v street) — fill strip between TL and BL corners
+      if (i === 0) {
+        sidewalks.push({ x: sx, z: sz + hSide, width: vSide, depth: hRoad });
+      }
+      // Right edge (last v street) — fill strip between TR and BR corners
+      if (i === gridX) {
+        sidewalks.push({ x: sx + vSide + vRoad, z: sz + hSide, width: vSide, depth: hRoad });
+      }
     }
   }
 

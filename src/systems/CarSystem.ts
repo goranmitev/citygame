@@ -51,6 +51,10 @@ export class CarSystem implements GameSystem {
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
 
+  // City boundary limits (set by CityBuilder)
+  private boundsMin = new THREE.Vector2(-Infinity, -Infinity);
+  private boundsMax = new THREE.Vector2(Infinity, Infinity);
+
   init(game: Game): void {
     this.camera = game.camera;
     this.input = game.getSystem<InputSystem>('input')!;
@@ -130,6 +134,12 @@ export class CarSystem implements GameSystem {
 
   clearColliders(): void {
     this.colliders.length = 0;
+  }
+
+  /** Set hard limits the car cannot cross (called by CityBuilder). */
+  setCityBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
+    this.boundsMin.set(minX, minZ);
+    this.boundsMax.set(maxX, maxZ);
   }
 
   update(delta: number): void {
@@ -231,8 +241,14 @@ export class CarSystem implements GameSystem {
       }
     }
 
-    this.position.x = nx;
-    this.position.z = nz;
+    // Clamp to city bounds
+    const clampedX = Math.max(this.boundsMin.x + CAR_HALF_W, Math.min(this.boundsMax.x - CAR_HALF_W, nx));
+    const clampedZ = Math.max(this.boundsMin.y + CAR_HALF_L, Math.min(this.boundsMax.y - CAR_HALF_L, nz));
+    if (clampedX !== nx || clampedZ !== nz) {
+      this.speed *= -0.2;
+    }
+    this.position.x = clampedX;
+    this.position.z = clampedZ;
   }
 
   private updateCarMesh(): void {
