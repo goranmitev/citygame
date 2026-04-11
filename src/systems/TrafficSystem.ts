@@ -73,6 +73,9 @@ export class TrafficSystem implements GameSystem {
   private car!: CarSystem;
   private scene!: THREE.Scene;
 
+  // Reusable box — avoids per-frame allocation in updateKnockables
+  private _knockBox = new THREE.Box3();
+
   init(game: Game): void {
     this.scene = game.scene;
     this.car = game.getSystem<CarSystem>('car')!;
@@ -180,12 +183,10 @@ export class TrafficSystem implements GameSystem {
         const dz = obj.baseZ - this.car.position.z;
         if (dx * dx + dz * dz > 16) continue;
 
-        const objBox = new THREE.Box3(
-          new THREE.Vector3(obj.baseX - KNOCKABLE_HALF, 0, obj.baseZ - KNOCKABLE_HALF),
-          new THREE.Vector3(obj.baseX + KNOCKABLE_HALF, KNOCKABLE_HEIGHT, obj.baseZ + KNOCKABLE_HALF),
-        );
+        this._knockBox.min.set(obj.baseX - KNOCKABLE_HALF, 0,               obj.baseZ - KNOCKABLE_HALF);
+        this._knockBox.max.set(obj.baseX + KNOCKABLE_HALF, KNOCKABLE_HEIGHT, obj.baseZ + KNOCKABLE_HALF);
 
-        if (carBox.intersectsBox(objBox)) {
+        if (carBox.intersectsBox(this._knockBox)) {
           obj.state = 'flying';
           const speed = carVel.length();
           obj.vel.set(

@@ -7,8 +7,8 @@
 export const CITY_GRID_X = 6;
 export const CITY_GRID_Z = 6;
 export const CITY_SEED = 42;
-export const CITY_CENTRE_X = 125;
-export const CITY_CENTRE_Z = 125;
+export const CITY_CENTRE_X = 350;
+export const CITY_CENTRE_Z = 350;
 
 // --- City colors ---
 export const ROAD_COLOR = 0x6b6b6b;
@@ -76,4 +76,4 @@ export const SPRITE_MIN_SIZE = 30;
 export const SPRITE_MAX_SIZE = 60;
 export const CLOUD_SPREAD_X = 30;
 export const CLOUD_SPREAD_Z = 12;
-export const CLOUD_FIELD_HALF = 300;   // wrap boundary around city centre
+export const CLOUD_FIELD_HALF = 420;   // wrap boundary around city centre

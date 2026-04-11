@@ -246,6 +246,7 @@ export function mergeParkGeos(
   const mesh = new THREE.Mesh(merged, material);
   mesh.castShadow = castShadow;
   mesh.receiveShadow = true;
+  mesh.matrixAutoUpdate = false;
   scene.add(mesh);
   for (let i = 0; i < geosList.length; i++) {
     if (normalized[i] !== geosList[i]) normalized[i].dispose();

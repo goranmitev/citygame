@@ -39,6 +39,9 @@ export class CityBuilder implements GameSystem {
     // --- Sidewalks: merge all into 1 mesh ---
     this.createSidewalks(scene);
 
+    // --- Zebra crossings at intersections ---
+    this.createZebraCrossings(scene);
+
     // --- Buildings and parks ---
     const buckets = createBuckets();
     let plotSeed = this.seed * 1000;
@@ -123,6 +126,7 @@ export class CityBuilder implements GameSystem {
     const mesh = new THREE.Mesh(merged, material);
     mesh.castShadow = shadows;
     mesh.receiveShadow = shadows;
+    mesh.matrixAutoUpdate = false;  // geometry has baked-in transforms; matrix is identity
     scene.add(mesh);
 
     // Dispose source and any newly created non-indexed copies
@@ -143,12 +147,35 @@ export class CityBuilder implements GameSystem {
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(this.layout.totalWidth / 2, -0.05, this.layout.totalDepth / 2);
     ground.receiveShadow = true;
+    ground.updateMatrix();
+    ground.matrixAutoUpdate = false;
     scene.add(ground);
+  }
+
+  /** Returns sub-segments of [start, end] that are not covered by any blocked range. */
+  private passableSegments(
+    start: number,
+    end: number,
+    blocked: Array<[number, number]>,
+  ): Array<[number, number]> {
+    blocked.sort((a, b) => a[0] - b[0]);
+    const segs: Array<[number, number]> = [];
+    let cur = start;
+    for (const [b0, b1] of blocked) {
+      if (b0 > cur) segs.push([cur, Math.min(b0, end)]);
+      cur = Math.max(cur, b1);
+      if (cur >= end) break;
+    }
+    if (cur < end) segs.push([cur, end]);
+    return segs;
   }
 
   private createRoads(scene: THREE.Scene): void {
     const roadGeos: THREE.BufferGeometry[] = [];
     const markingGeos: THREE.BufferGeometry[] = [];
+
+    const hStreets = this.layout.streets.filter(s => s.width > s.depth);
+    const vStreets = this.layout.streets.filter(s => s.depth >= s.width);
 
     for (const street of this.layout.streets) {
       const geo = new THREE.PlaneGeometry(street.width, street.depth);
@@ -157,26 +184,48 @@ export class CityBuilder implements GameSystem {
       geo.applyMatrix4(m);
       roadGeos.push(geo);
 
-      // Center dashed line
+      // Lane divider lines — one dashed line per lane boundary, skip intersections
       const isH = street.width > street.depth;
-      const length = isH ? street.width : street.depth;
       const dashLen = 2;
       const gap = 3;
+      const LANE_WIDTH = 3.5;
 
-      for (let d = 0; d < length; d += dashLen + gap) {
-        const dLen = Math.min(dashLen, length - d);
-        const dGeo = new THREE.PlaneGeometry(
-          isH ? dLen : 0.15,
-          isH ? 0.15 : dLen,
-        );
-        const dm = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-        if (isH) {
-          dm.setPosition(street.x + d + dLen / 2, 0.02, street.z + street.depth / 2);
-        } else {
-          dm.setPosition(street.x + street.width / 2, 0.02, street.z + d + dLen / 2);
+      if (isH) {
+        const roadW = street.depth;
+        const numLanes = Math.max(2, Math.round(roadW / LANE_WIDTH));
+        const blocked: Array<[number, number]> = vStreets.map(v => [v.x, v.x + v.width]);
+        for (let lane = 1; lane < numLanes; lane++) {
+          const lineZ = street.z + lane * (roadW / numLanes);
+          for (const [segStart, segEnd] of this.passableSegments(street.x, street.x + street.width, blocked)) {
+            const segLen = segEnd - segStart;
+            for (let d = 0; d < segLen; d += dashLen + gap) {
+              const dLen = Math.min(dashLen, segLen - d);
+              const dGeo = new THREE.PlaneGeometry(dLen, 0.15);
+              const dm = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+              dm.setPosition(segStart + d + dLen / 2, 0.02, lineZ);
+              dGeo.applyMatrix4(dm);
+              markingGeos.push(dGeo);
+            }
+          }
         }
-        dGeo.applyMatrix4(dm);
-        markingGeos.push(dGeo);
+      } else {
+        const roadW = street.width;
+        const numLanes = Math.max(2, Math.round(roadW / LANE_WIDTH));
+        const blocked: Array<[number, number]> = hStreets.map(h => [h.z, h.z + h.depth]);
+        for (let lane = 1; lane < numLanes; lane++) {
+          const lineX = street.x + lane * (roadW / numLanes);
+          for (const [segStart, segEnd] of this.passableSegments(street.z, street.z + street.depth, blocked)) {
+            const segLen = segEnd - segStart;
+            for (let d = 0; d < segLen; d += dashLen + gap) {
+              const dLen = Math.min(dashLen, segLen - d);
+              const dGeo = new THREE.PlaneGeometry(0.15, dLen);
+              const dm = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+              dm.setPosition(lineX, 0.02, segStart + d + dLen / 2);
+              dGeo.applyMatrix4(dm);
+              markingGeos.push(dGeo);
+            }
+          }
+        }
       }
     }
 
@@ -185,6 +234,7 @@ export class CityBuilder implements GameSystem {
     if (roadMerged) {
       const mesh = new THREE.Mesh(roadMerged, new THREE.MeshStandardMaterial({ color: ROAD_COLOR, roughness: 0.85 }));
       mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
       scene.add(mesh);
     }
     for (const g of roadGeos) g.dispose();
@@ -192,9 +242,79 @@ export class CityBuilder implements GameSystem {
     // Merge markings
     const markingMerged = mergeGeometries(markingGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (markingMerged) {
-      scene.add(new THREE.Mesh(markingMerged, new THREE.MeshStandardMaterial({ color: MARKING_COLOR, roughness: 0.5 })));
+      const mesh = new THREE.Mesh(markingMerged, new THREE.MeshStandardMaterial({ color: MARKING_COLOR, roughness: 0.5 }));
+      mesh.matrixAutoUpdate = false;
+      scene.add(mesh);
     }
     for (const g of markingGeos) g.dispose();
+  }
+
+  private createZebraCrossings(scene: THREE.Scene): void {
+    const stripeGeos: THREE.BufferGeometry[] = [];
+    const STRIPE_W = 0.5;
+    const STRIPE_GAP = 0.45;
+    const N_STRIPES = 4;
+    const Y = 0.025; // above road (0.01) and center-line dashes (0.02)
+
+    const hStreets = this.layout.streets.filter(s => s.width > s.depth);
+    const vStreets = this.layout.streets.filter(s => s.depth >= s.width);
+
+    const addStripe = (cx: number, cz: number, w: number, d: number) => {
+      const geo = new THREE.PlaneGeometry(w, d);
+      const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+      m.setPosition(cx, Y, cz);
+      geo.applyMatrix4(m);
+      stripeGeos.push(geo);
+    };
+
+    // Crossing depth in the direction away from the intersection
+    const CROSSING_D = N_STRIPES * STRIPE_W + (N_STRIPES - 1) * STRIPE_GAP;
+
+    for (const h of hStreets) {
+      for (const v of vStreets) {
+        const ix0 = v.x;
+        const ix1 = v.x + v.width;
+        const iz0 = h.z;
+        const iz1 = h.z + h.depth;
+
+        // South crossing: stripes run parallel to road (along Z), stacked across road width (X)
+        // Crossing zone: z in [iz1, iz1 + CROSSING_D], x in [ix0, ix1]
+        const southCenterZ = iz1 + CROSSING_D / 2;
+        for (let k = 0; ; k++) {
+          const x = ix0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
+          if (x - STRIPE_W / 2 >= ix1) break;
+          const stripeW = Math.min(STRIPE_W, ix1 - (x - STRIPE_W / 2));
+          addStripe(x - STRIPE_W / 2 + stripeW / 2, southCenterZ, stripeW, CROSSING_D);
+        }
+
+        // East crossing: stripes run parallel to road (along X), stacked across road height (Z)
+        // Crossing zone: x in [ix1, ix1 + CROSSING_D], z in [iz0, iz1]
+        const eastCenterX = ix1 + CROSSING_D / 2;
+        for (let k = 0; ; k++) {
+          const z = iz0 + k * (STRIPE_W + STRIPE_GAP) + STRIPE_W / 2;
+          if (z - STRIPE_W / 2 >= iz1) break;
+          const stripeD = Math.min(STRIPE_W, iz1 - (z - STRIPE_W / 2));
+          addStripe(eastCenterX, z - STRIPE_W / 2 + stripeD / 2, CROSSING_D, stripeD);
+        }
+      }
+    }
+
+    if (stripeGeos.length === 0) return;
+    const normalized = stripeGeos.map(g => g.index ? g.toNonIndexed() : g);
+    const merged = mergeGeometries(normalized, false);
+    if (merged) {
+      const mesh = new THREE.Mesh(
+        merged,
+        new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4 }),
+      );
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      scene.add(mesh);
+    }
+    for (let i = 0; i < stripeGeos.length; i++) {
+      if (normalized[i] !== stripeGeos[i]) normalized[i].dispose();
+      stripeGeos[i].dispose();
+    }
   }
 
   private createSidewalks(scene: THREE.Scene): void {
@@ -216,6 +336,7 @@ export class CityBuilder implements GameSystem {
     if (merged) {
       const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: SIDEWALK_COLOR, roughness: 0.8 }));
       mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
       scene.add(mesh);
     }
     for (const g of geos) g.dispose();

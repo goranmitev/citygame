@@ -16,7 +16,7 @@ export class SceneSystem implements GameSystem {
     scene.background = new THREE.Color(0x87ceeb);
 
     // Distance fog for depth cue and performance
-    scene.fog = new THREE.Fog(0xc8dce8, 80, 400);
+    scene.fog = new THREE.Fog(0xc8dce8, 80, 300);
 
     // Hemisphere light (sky + ground bounce) — fills shadows
     const hemi = new THREE.HemisphereLight(0x87ceeb, 0x556655, 1.2);
@@ -38,7 +38,7 @@ export class SceneSystem implements GameSystem {
     this.sun.shadow.camera.bottom = -s;
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 400;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.001;
 
     scene.add(this.sun);

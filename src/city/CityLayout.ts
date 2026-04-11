@@ -50,18 +50,19 @@ export function generateCityLayout(
   const rng = createRNG(seed);
 
   const ROAD_FRACTION = 0.65; // road takes ~65% of street width
-  const MIN_BLOCK_SIZE = 18;
-  const MAX_BLOCK_SIZE = 55;
+  const MIN_BLOCK_SIZE = 40;
+  const MAX_BLOCK_SIZE = 90;
   const PLOT_MARGIN = 0.5;
   const MIN_PLOT_WIDTH = 6;
   const MAX_PLOT_WIDTH = 16;
 
-  // Each street gets its own width: narrow alley, normal, or boulevard
+  // Each street gets its own width. Road occupies ROAD_FRACTION of total width.
+  // Lane width ~3.5 units → 2 lanes: 8–12, 3–4 lanes: 16–24, 5–6 lanes: 26–36
   function randomStreetWidth(): number {
     const roll = rng();
-    if (roll < 0.2) return randRange(rng, 5, 7);   // narrow alley
-    if (roll < 0.7) return randRange(rng, 8, 11);  // normal street
-    return randRange(rng, 13, 18);                  // boulevard
+    if (roll < 0.20) return randRange(rng, 8, 12);   // 2-lane street
+    if (roll < 0.75) return randRange(rng, 16, 24);  // 3–4 lane street
+    return randRange(rng, 26, 36);                    // 5–6 lane boulevard
   }
 
   // Street widths: (gridX+1) vertical streets, (gridZ+1) horizontal streets

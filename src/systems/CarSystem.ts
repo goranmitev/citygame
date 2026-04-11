@@ -41,6 +41,11 @@ export class CarSystem implements GameSystem {
   private camYaw = 0;
   private camPitch = 0;
 
+  // Reusable objects — allocated once, mutated each frame
+  private _tryBox = new THREE.Box3();
+  private _idealPos = new THREE.Vector3();
+  private _lookAt = new THREE.Vector3();
+
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
 
@@ -213,13 +218,11 @@ export class CarSystem implements GameSystem {
     const nx = this.position.x + dx;
     const nz = this.position.z + dz;
 
-    const carBox = new THREE.Box3(
-      new THREE.Vector3(nx - CAR_HALF_W, 0,          nz - CAR_HALF_L),
-      new THREE.Vector3(nx + CAR_HALF_W, CAR_HEIGHT, nz + CAR_HALF_L),
-    );
+    this._tryBox.min.set(nx - CAR_HALF_W, 0,          nz - CAR_HALF_L);
+    this._tryBox.max.set(nx + CAR_HALF_W, CAR_HEIGHT, nz + CAR_HALF_L);
 
     for (const box of this.colliders) {
-      if (carBox.intersectsBox(box)) {
+      if (this._tryBox.intersectsBox(box)) {
         this.speed *= -0.2;
         return;
       }
@@ -250,21 +253,21 @@ export class CarSystem implements GameSystem {
     const dist = CAR_CAM_DIST * pitchCos;
     const height = CAR_CAM_HEIGHT + CAR_CAM_DIST * pitchSin;
 
-    const idealPos = new THREE.Vector3(
+    this._idealPos.set(
       this.position.x - sinA * dist,
       this.position.y + height,
       this.position.z - cosA * dist,
     );
 
-    const lookAt = new THREE.Vector3(
+    this._lookAt.set(
       this.position.x + sinA * 2,
       this.position.y + 1.2,
       this.position.z + cosA * 2,
     );
 
     const t = Math.min(1, CAR_CAM_LERP * delta);
-    this.camPos.lerp(idealPos, t);
-    this.camTarget.lerp(lookAt, t);
+    this.camPos.lerp(this._idealPos, t);
+    this.camTarget.lerp(this._lookAt, t);
 
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camTarget);

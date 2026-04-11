@@ -10,6 +10,18 @@ interface Pedestrian {
   currentSegmentIndex: number;
 }
 
+// Material pools — created once, shared across all pedestrians
+const SKIN_COLORS  = [0xf5c5a0, 0xd4956a, 0x8d5524];
+const SHIRT_COLORS = [0x3a6bbf, 0xbf3a3a, 0x3abf5a, 0x999999, 0xbf9a3a, 0xeeeeee, 0x6a3abf, 0xbf3a9a, 0xe07030];
+const PANTS_COLORS = [0x2a2a4a, 0x3a3a2a, 0x4a2a2a, 0x1a1a1a, 0x5a4a2a, 0x2a4a3a];
+
+const skinMats  = SKIN_COLORS.map(c  => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }));
+const shirtMats = SHIRT_COLORS.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
+const pantsMats = PANTS_COLORS.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
+
+// Shared leg geometry — same shape for every pedestrian
+const _legGeo = new THREE.BoxGeometry(0.14, 0.90, 0.14);
+
 export class PedestrianSystem implements GameSystem {
   readonly name = 'pedestrian';
 
@@ -19,6 +31,9 @@ export class PedestrianSystem implements GameSystem {
   private maxPedestrians = 60;
   private spawnInterval = 1.5;
   private timer = 0;
+
+  // Reusable vector — avoids per-frame allocation in updatePedestrian
+  private _dir = new THREE.Vector3();
 
   init(game: Game): void {
     this.scene = game.scene;
@@ -75,21 +90,21 @@ export class PedestrianSystem implements GameSystem {
   }
 
   private updatePedestrian(p: Pedestrian, delta: number): void {
-    const direction = new THREE.Vector3().subVectors(p.target, p.position);
-    const distanceToTarget = direction.length();
+    this._dir.subVectors(p.target, p.position);
+    const distanceToTarget = this._dir.length();
 
     if (distanceToTarget < 0.5) {
       this.pickNewTarget(p);
       return;
     }
 
-    direction.normalize();
+    this._dir.normalize();
     const moveStep = p.speed * delta;
-    p.position.x += direction.x * moveStep;
-    p.position.z += direction.z * moveStep;
+    p.position.x += this._dir.x * moveStep;
+    p.position.z += this._dir.z * moveStep;
     p.group.position.copy(p.position);
 
-    const targetRotation = Math.atan2(direction.x, direction.z);
+    const targetRotation = Math.atan2(this._dir.x, this._dir.z);
     // Simple angular interpolation to avoid lerpAngle issue
     let diff = targetRotation - p.group.rotation.y;
     while (diff > Math.PI) diff -= Math.PI * 2;
@@ -111,26 +126,21 @@ export class PedestrianSystem implements GameSystem {
   private createPedestrianMesh(): THREE.Group {
     const group = new THREE.Group();
 
-    // Randomise appearance
-    const skinTones  = [0xf5c5a0, 0xd4956a, 0x8d5524];
-    const shirtColors = [0x3a6bbf, 0xbf3a3a, 0x3abf5a, 0x999999, 0xbf9a3a, 0xeeeeee, 0x6a3abf, 0xbf3a9a, 0xe07030];
-    const pantsColors = [0x2a2a4a, 0x3a3a2a, 0x4a2a2a, 0x1a1a1a, 0x5a4a2a, 0x2a4a3a];
-
-    const skinMat  = new THREE.MeshStandardMaterial({ color: skinTones[Math.floor(Math.random() * skinTones.length)], roughness: 0.8 });
-    const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColors[Math.floor(Math.random() * shirtColors.length)], roughness: 0.9 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColors[Math.floor(Math.random() * pantsColors.length)], roughness: 0.9 });
+    // Pick from pooled materials — no per-spawn shader compiles
+    const skinMat  = skinMats[Math.floor(Math.random() * skinMats.length)];
+    const shirtMat = shirtMats[Math.floor(Math.random() * shirtMats.length)];
+    const pantsMat = pantsMats[Math.floor(Math.random() * pantsMats.length)];
 
     // Uniform height scale — feet stay at y=0, character grows upward.
     // Base mesh is designed at PLAYER_HEIGHT (~1.75); scale varies ±10%.
     group.scale.setScalar(0.90 + Math.random() * 0.20);
 
-    // Legs — two boxes, bottoms flush at y=0
-    const legGeo = new THREE.BoxGeometry(0.14, 0.90, 0.14);
-    const legL = new THREE.Mesh(legGeo, pantsMat);
+    // Legs — share the same geometry instance (immutable shape, different positions)
+    const legL = new THREE.Mesh(_legGeo, pantsMat);
     legL.position.set(-0.09, 0.45, 0);
     group.add(legL);
 
-    const legR = new THREE.Mesh(legGeo.clone(), pantsMat);
+    const legR = new THREE.Mesh(_legGeo, pantsMat);
     legR.position.set(0.09, 0.45, 0);
     group.add(legR);
 
