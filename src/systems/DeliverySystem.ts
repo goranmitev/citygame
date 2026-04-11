@@ -78,6 +78,7 @@ export class DeliverySystem implements GameSystem {
   private nextSpawnIn = 2; // first order after 2 seconds
   private gameOver = false;
   private notifyTimeout = 0;
+  private _elapsed = 0;
 
   // HUD elements
   private timerEl!: HTMLDivElement;
@@ -128,6 +129,7 @@ export class DeliverySystem implements GameSystem {
 
   update(delta: number): void {
     if (this.gameOver) return;
+    this._elapsed += delta;
 
     // Spawn orders
     this.nextSpawnIn -= delta;
@@ -149,7 +151,7 @@ export class DeliverySystem implements GameSystem {
     }
 
     // Animate marker caps (bob up and down)
-    const bob = Math.sin(performance.now() / 300) * 0.4;
+    const bob = Math.sin(this._elapsed * (1000 / 300)) * 0.4;
     for (const r of this.restaurants) {
       if (r.hasOrder) r.markerCap.position.y = 11 + bob;
     }

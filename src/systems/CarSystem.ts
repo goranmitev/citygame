@@ -30,6 +30,8 @@ export class CarSystem implements GameSystem {
   private camera!: THREE.PerspectiveCamera;
 
   private carGroup!: THREE.Group;
+  private wheelPivots: THREE.Group[] = [];
+  private _wheelAngle = 0;
 
   // Physics state
   private speed = 0;
@@ -136,6 +138,7 @@ export class CarSystem implements GameSystem {
       this.updateCamera(delta);
       this.sceneSystem.updateShadowTarget(this.position.x, this.position.z);
     }
+    this._wheelAngle += (this.speed / 0.35) * delta;
     this.updateCarMesh();
   }
 
@@ -235,6 +238,9 @@ export class CarSystem implements GameSystem {
   private updateCarMesh(): void {
     this.carGroup.position.set(this.position.x, this.position.y, this.position.z);
     this.carGroup.rotation.y = this.heading;
+    for (const pivot of this.wheelPivots) {
+      pivot.rotation.x = this._wheelAngle;
+    }
   }
 
   private updateCamera(delta: number): void {
@@ -335,18 +341,21 @@ export class CarSystem implements GameSystem {
     ];
 
     for (const wp of wheelPositions) {
+      const pivot = new THREE.Group();
+      pivot.position.set(wp.x, 0.35, wp.z);
+      this.carGroup.add(pivot);
+      this.wheelPivots.push(pivot);
+
       const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
       const wheel = new THREE.Mesh(wGeo, wheelMat);
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wp.x, 0.35, wp.z);
       wheel.castShadow = true;
-      this.carGroup.add(wheel);
+      pivot.add(wheel);
 
       const rGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.26, 8);
       const rim = new THREE.Mesh(rGeo, rimMat);
       rim.rotation.z = Math.PI / 2;
-      rim.position.set(wp.x, 0.35, wp.z);
-      this.carGroup.add(rim);
+      pivot.add(rim);
     }
 
     const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 1.5 });
