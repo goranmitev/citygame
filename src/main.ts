@@ -5,6 +5,7 @@ import { CarSystem } from './systems/CarSystem';
 import { WalkSystem } from './systems/WalkSystem';
 import { PedestrianSystem } from './systems/PedestrianSystem';
 import { CityBuilder } from './city/CityBuilder';
+import { DeliverySystem } from './systems/DeliverySystem';
 import { CloudSystem } from './systems/CloudSystem';
 import { MinimapSystem } from './systems/MinimapSystem';
 import { SpeedometerSystem } from './systems/SpeedometerSystem';
@@ -21,6 +22,7 @@ game
   .addSystem(new WalkSystem())       // 'player' — depends on CarSystem
   .addSystem(new PedestrianSystem())
   .addSystem(new CityBuilder(CITY_GRID_X, CITY_GRID_Z, CITY_SEED))
+  .addSystem(new DeliverySystem())     // 'delivery' — must come after CityBuilder and WalkSystem
   .addSystem(new MinimapSystem())
   .addSystem(new SpeedometerSystem())
   .addSystem(new TrafficSystem())    // 'traffic' — must come after CityBuilder

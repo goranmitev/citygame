@@ -2,6 +2,7 @@ import { Game, GameSystem } from '../core/Game';
 import { WalkSystem } from './WalkSystem';
 import { CarSystem } from './CarSystem';
 import { CityBuilder } from '../city/CityBuilder';
+import { DeliverySystem } from './DeliverySystem';
 import { CityLayoutData } from '../city/CityLayout';
 import { MAP_SIZE, MAP_PADDING, MAP_DOT_RADIUS, MAP_ARROW_SIZE } from '../constants';
 
@@ -12,6 +13,7 @@ export class MinimapSystem implements GameSystem {
   private ctx!: CanvasRenderingContext2D;
   private walker!: WalkSystem;
   private car!: CarSystem;
+  private delivery!: DeliverySystem | null;
   private layout!: CityLayoutData;
 
   private cityCanvas!: HTMLCanvasElement;
@@ -19,6 +21,7 @@ export class MinimapSystem implements GameSystem {
   init(game: Game): void {
     this.walker = game.getSystem<WalkSystem>('player')!;
     this.car = game.getSystem<CarSystem>('car')!;
+    this.delivery = game.getSystem<DeliverySystem>('delivery') ?? null;
 
     const builder = game.getSystem<CityBuilder>('city')!;
     this.layout = builder.layout;
@@ -102,6 +105,40 @@ export class MinimapSystem implements GameSystem {
 
     // Car heading arrow
     this.drawArrow(ctx, cx, cz, -this.car.heading, '#f5c842');
+
+    // --- Delivery: pickup dots (green) ---
+    if (this.delivery) {
+      for (const dot of this.delivery.pickupDots) {
+        const dx = dot.x * scaleX;
+        const dz = dot.z * scaleZ;
+        const pulse = Math.sin(performance.now() / 300) * 0.5 + 0.5;
+        // Outer pulse ring
+        ctx.beginPath();
+        ctx.arc(dx, dz, MAP_DOT_RADIUS + 4 + pulse * 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(34,204,68,${0.2 + pulse * 0.25})`;
+        ctx.fill();
+        // Solid dot
+        ctx.beginPath();
+        ctx.arc(dx, dz, MAP_DOT_RADIUS + 1, 0, Math.PI * 2);
+        ctx.fillStyle = '#22cc44';
+        ctx.fill();
+      }
+
+      // Delivery destination dot (orange)
+      if (this.delivery.destDot) {
+        const dx = this.delivery.destDot.x * scaleX;
+        const dz = this.delivery.destDot.z * scaleZ;
+        const pulse = Math.sin(performance.now() / 250) * 0.5 + 0.5;
+        ctx.beginPath();
+        ctx.arc(dx, dz, MAP_DOT_RADIUS + 4 + pulse * 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,136,0,${0.2 + pulse * 0.25})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(dx, dz, MAP_DOT_RADIUS + 1, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff8800';
+        ctx.fill();
+      }
+    }
 
     // --- Player dot (red) — only when on foot ---
     if (!this.car.isOccupied) {

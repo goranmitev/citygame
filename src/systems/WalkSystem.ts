@@ -11,6 +11,15 @@ import {
   CAR_ENTER_RADIUS,
 } from '../constants';
 
+export interface InteractZone {
+  id: string;
+  center: THREE.Vector3;
+  radius: number;
+  /** Dynamic — can reflect order value, state, etc. */
+  getPrompt(): string;
+  onInteract(): void;
+}
+
 export class WalkSystem implements GameSystem {
   /** Name 'player' — CityBuilder still uses getSystem('player') to set spawn. */
   readonly name = 'player';
@@ -22,6 +31,7 @@ export class WalkSystem implements GameSystem {
   heading = 0;
 
   private driving = false;
+  private interactZones = new Map<string, InteractZone>();
 
   private camera!: THREE.PerspectiveCamera;
   private input!: InputSystem;
@@ -62,6 +72,14 @@ export class WalkSystem implements GameSystem {
     this.updateCharacterMesh();
   }
 
+  registerInteractZone(zone: InteractZone): void {
+    this.interactZones.set(zone.id, zone);
+  }
+
+  unregisterInteractZone(id: string): void {
+    this.interactZones.delete(id);
+  }
+
   /** Register collision AABBs (buildings). Also forwards to CarSystem. */
   addColliders(boxes: THREE.Box3[]): void {
     this.colliders.push(...boxes);
@@ -78,21 +96,32 @@ export class WalkSystem implements GameSystem {
 
     if (!state.pointerLocked) return;
 
-    // --- Enter / Exit car ---
+    // --- Enter / Exit car / Interact with zones ---
+    const nearCar = !this.driving && this.position.distanceTo(this.car.position) <= CAR_ENTER_RADIUS;
+    const nearestZone = (!this.driving && !nearCar) ? this.getNearestZone() : null;
+
     if (state.interactPressed) {
       if (this.driving) {
         this.exitCar();
-      } else {
-        const dist = this.position.distanceTo(this.car.position);
-        if (dist <= CAR_ENTER_RADIUS) {
-          this.enterCar();
-        }
+      } else if (nearCar) {
+        this.enterCar();
+      } else if (nearestZone) {
+        nearestZone.onInteract();
       }
     }
 
     // Show/hide "Press E" prompt
-    const nearCar = !this.driving && this.position.distanceTo(this.car.position) <= CAR_ENTER_RADIUS;
-    this.promptEl.style.display = nearCar ? 'block' : 'none';
+    if (this.driving) {
+      this.promptEl.style.display = 'none';
+    } else if (nearCar) {
+      this.promptEl.textContent = 'Press E to enter';
+      this.promptEl.style.display = 'block';
+    } else if (nearestZone) {
+      this.promptEl.textContent = nearestZone.getPrompt();
+      this.promptEl.style.display = 'block';
+    } else {
+      this.promptEl.style.display = 'none';
+    }
 
     if (this.driving) {
       this.sceneSystem.updateShadowTarget(this.car.position.x, this.car.position.z);
@@ -108,6 +137,19 @@ export class WalkSystem implements GameSystem {
 
   dispose(): void {
     this.promptEl.remove();
+  }
+
+  private getNearestZone(): InteractZone | null {
+    let nearest: InteractZone | null = null;
+    let nearestDist = Infinity;
+    for (const zone of this.interactZones.values()) {
+      const dist = this.position.distanceTo(zone.center);
+      if (dist <= zone.radius && dist < nearestDist) {
+        nearestDist = dist;
+        nearest = zone;
+      }
+    }
+    return nearest;
   }
 
   // ---------------------------------------------------------------------------

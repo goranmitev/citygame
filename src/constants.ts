@@ -55,7 +55,7 @@ export const CAR_ENTER_RADIUS = 3.5;   // max distance to trigger entry
 
 // --- Minimap ---
 export const MAP_SIZE = 180;
-export const MAP_PADDING = 10;
+export const MAP_PADDING = 35;
 export const MAP_DOT_RADIUS = 4;
 export const MAP_ARROW_SIZE = 7;
 
@@ -63,6 +63,20 @@ export const MAP_ARROW_SIZE = 7;
 export const SPEEDO_SIZE = 120;        // canvas px
 export const SPEEDO_PADDING = 10;      // px from corner
 export const SPEEDO_MAX_SPEED = 160;   // km/h — full dial
+
+// --- Delivery game ---
+export const DELIVERY_RESTAURANT_COUNT = 6;
+export const DELIVERY_INTERACT_RADIUS = 3.5;
+export const DELIVERY_MAX_FAILURES = 5;
+export const DELIVERY_BASE_PAY = 0.10;         // 10% of order value
+export const DELIVERY_MAX_TIP = 0.30;          // up to 30% tip for fast delivery
+export const DELIVERY_ORDER_VALUE_MIN = 20;
+export const DELIVERY_ORDER_VALUE_MAX = 80;
+export const DELIVERY_TIME_BASE = 40;          // base seconds on timer
+export const DELIVERY_TIME_PER_UNIT = 0.085;   // extra seconds per world-unit of distance
+export const DELIVERY_ORDER_INTERVAL_MIN = 10; // seconds between new order spawns
+export const DELIVERY_ORDER_INTERVAL_MAX = 25;
+export const DELIVERY_NEXT_ORDER_DELAY = 4;    // seconds until next spawn after delivery/fail
 
 // --- Clouds ---
 export const CLOUD_COUNT = 40;
