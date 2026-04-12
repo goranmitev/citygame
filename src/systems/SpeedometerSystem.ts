@@ -33,15 +33,20 @@ export class SpeedometerSystem implements GameSystem {
     this.canvas.width = SIZE;
     this.canvas.height = SIZE;
 
-    // Position bottom-left, above any other UI
+    const isMobile = 'ontouchstart' in window;
+    const displaySize = isMobile ? Math.round(SIZE * 0.7) : SIZE;
+
+    // Desktop: bottom-left. Mobile: top-left (out of joystick zone)
     Object.assign(this.canvas.style, {
       position: 'fixed',
-      bottom: `${PADDING}px`,
-      left: `${PADDING}px`,
-      width: `${SIZE}px`,
-      height: `${SIZE}px`,
+      top: isMobile ? '10px' : 'auto',
+      bottom: isMobile ? 'auto' : `${PADDING}px`,
+      left: `${isMobile ? 10 : PADDING}px`,
+      width: `${displaySize}px`,
+      height: `${displaySize}px`,
       pointerEvents: 'none',
       zIndex: '100',
+      opacity: isMobile ? '0.8' : '1',
     });
 
     document.body.appendChild(this.canvas);

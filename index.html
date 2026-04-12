@@ -43,6 +43,16 @@
       .desktop-prompt { display: none; }
       .mobile-prompt { display: block; }
     }
+
+    /* Prevent long-press context menu and text selection on mobile */
+    @media (pointer: coarse) {
+      body {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: none;
+      }
+    }
   </style>
   <script async src="https://jam.pieter.com/2026/widget.js"></script>
 </head>

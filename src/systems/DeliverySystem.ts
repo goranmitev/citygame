@@ -422,12 +422,15 @@ export class DeliverySystem implements GameSystem {
     });
     document.body.appendChild(this.timerEl);
 
-    // Stats panel — top right
+    // Stats panel — top right (desktop), top center (mobile to avoid minimap)
+    const isMobile = 'ontouchstart' in window;
     this.statsEl = document.createElement('div');
     Object.assign(this.statsEl.style, {
       position: 'fixed',
       top: '10px',
-      right: '10px',
+      right: isMobile ? 'auto' : '10px',
+      left: isMobile ? '50%' : 'auto',
+      transform: isMobile ? 'translateX(-50%)' : 'none',
       background: 'rgba(10,12,20,0.78)',
       color: '#f5c842',
       fontFamily: 'monospace',
@@ -439,7 +442,7 @@ export class DeliverySystem implements GameSystem {
       pointerEvents: 'none',
       zIndex: '100',
       lineHeight: '1.6',
-      textAlign: 'right',
+      textAlign: isMobile ? 'center' : 'right',
     });
     document.body.appendChild(this.statsEl);
 

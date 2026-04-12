@@ -80,15 +80,19 @@ export class MinimapSystem implements GameSystem {
     this.canvas.width = MAP_SIZE;
     this.canvas.height = MAP_SIZE;
 
+    const isMobile = 'ontouchstart' in window;
+    const displaySize = isMobile ? Math.round(MAP_SIZE * 0.65) : MAP_SIZE;
+
     Object.assign(this.canvas.style, {
       position: 'fixed',
-      bottom: `${MAP_PADDING}px`,
-      right: `${MAP_PADDING}px`,
-      width: `${MAP_SIZE}px`,
-      height: `${MAP_SIZE}px`,
+      top: isMobile ? '10px' : 'auto',
+      bottom: isMobile ? 'auto' : `${MAP_PADDING}px`,
+      right: isMobile ? '10px' : `${MAP_PADDING}px`,
+      width: `${displaySize}px`,
+      height: `${displaySize}px`,
       borderRadius: '6px',
       border: '1px solid rgba(255,255,255,0.25)',
-      opacity: '0.85',
+      opacity: isMobile ? '0.7' : '0.85',
       pointerEvents: 'none',
       zIndex: '100',
     });
