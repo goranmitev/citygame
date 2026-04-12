@@ -40,12 +40,14 @@ export class InputSystem implements GameSystem {
   private touchLookId: number | null = null;
   private touchMoveStart = { x: 0, y: 0 };
   private touchLookPrev = { x: 0, y: 0 };
-  private isMobile = false;
+  readonly isMobile = 'ontouchstart' in window;
+
+  // Mobile UI elements
+  private interactBtn: HTMLButtonElement | null = null;
 
   init(game: Game): void {
     this.canvas = game.renderer.domElement;
     this.overlay = document.getElementById('overlay')!;
-    this.isMobile = 'ontouchstart' in window;
 
     // Keyboard
     window.addEventListener('keydown', this.onKeyDown);
@@ -70,6 +72,7 @@ export class InputSystem implements GameSystem {
       this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
       this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
       this.canvas.addEventListener('touchend', this.onTouchEnd, { passive: false });
+      this.buildMobileButtons();
     }
   }
 
@@ -88,6 +91,7 @@ export class InputSystem implements GameSystem {
     this.canvas.removeEventListener('touchstart', this.onTouchStart);
     this.canvas.removeEventListener('touchmove', this.onTouchMove);
     this.canvas.removeEventListener('touchend', this.onTouchEnd);
+    this.interactBtn?.remove();
   }
 
   // --- Keyboard ---
@@ -176,10 +180,13 @@ export class InputSystem implements GameSystem {
         const dx = t.clientX - this.touchMoveStart.x;
         const dy = t.clientY - this.touchMoveStart.y;
         const deadzone = 15;
+        const sprintThreshold = 50;
         this.state.forward = dy < -deadzone;
         this.state.backward = dy > deadzone;
         this.state.left = dx < -deadzone;
         this.state.right = dx > deadzone;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        this.state.sprint = dist > sprintThreshold;
       }
 
       if (t.identifier === this.touchLookId) {
@@ -196,11 +203,58 @@ export class InputSystem implements GameSystem {
       const t = e.changedTouches[i];
       if (t.identifier === this.touchMoveId) {
         this.touchMoveId = null;
-        this.state.forward = this.state.backward = this.state.left = this.state.right = false;
+        this.state.forward = this.state.backward = this.state.left = this.state.right = this.state.sprint = false;
       }
       if (t.identifier === this.touchLookId) {
         this.touchLookId = null;
       }
     }
   };
+
+  // --- Mobile buttons ---
+
+  private buildMobileButtons(): void {
+    const btnStyle: Partial<CSSStyleDeclaration> = {
+      position: 'fixed',
+      zIndex: '100',
+      width: '64px',
+      height: '64px',
+      borderRadius: '50%',
+      border: '2px solid rgba(255,255,255,0.4)',
+      background: 'rgba(0,0,0,0.35)',
+      color: '#fff',
+      fontSize: '13px',
+      fontFamily: 'sans-serif',
+      fontWeight: '600',
+      letterSpacing: '0.03em',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      pointerEvents: 'auto',
+      userSelect: 'none',
+      touchAction: 'none',
+    };
+
+    // Interact button — right side, above center
+    this.interactBtn = document.createElement('button');
+    Object.assign(this.interactBtn.style, btnStyle, {
+      right: '20px',
+      bottom: '100px',
+    } as Partial<CSSStyleDeclaration>);
+    this.interactBtn.textContent = 'E';
+    this.interactBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.state.interact = true;
+      this.state.interactPressed = true;
+      this.interactBtn!.style.background = 'rgba(255,255,255,0.3)';
+    }, { passive: false });
+    this.interactBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.state.interact = false;
+      this.interactBtn!.style.background = 'rgba(0,0,0,0.35)';
+    }, { passive: false });
+    document.body.appendChild(this.interactBtn);
+  }
 }

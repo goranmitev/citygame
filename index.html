@@ -36,17 +36,29 @@
       margin: 0 2px;
     }
     #overlay.hidden { display: none; }
+
+    /* Show desktop prompt by default, mobile prompt on touch devices */
+    .mobile-prompt { display: none; }
+    @media (pointer: coarse) {
+      .desktop-prompt { display: none; }
+      .mobile-prompt { display: block; }
+    }
   </style>
   <script async src="https://jam.pieter.com/2026/widget.js"></script>
 </head>
 <body>
   <div id="overlay">
-    <div class="prompt">
+    <div class="prompt desktop-prompt">
       Click to drive<br/>
       <span class="keys">W</span> accelerate &nbsp;
       <span class="keys">S</span> brake / reverse<br/>
       <span class="keys">A</span>
       <span class="keys">D</span> steer
+    </div>
+    <div class="prompt mobile-prompt">
+      Tap to play<br/>
+      Left side — move &nbsp; Right side — look<br/>
+      <span class="keys">E</span> button — interact
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

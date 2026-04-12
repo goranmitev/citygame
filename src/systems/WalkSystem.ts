@@ -120,14 +120,16 @@ export class WalkSystem implements GameSystem {
       }
     }
 
-    // Show/hide "Press E" prompt
+    // Show/hide interact prompt
+    const mobile = this.input.isMobile;
     if (this.driving) {
       this.promptEl.style.display = 'none';
     } else if (nearCar) {
-      this.promptEl.textContent = 'Press E to enter';
+      this.promptEl.textContent = mobile ? 'Tap E to enter' : 'Press E to enter';
       this.promptEl.style.display = 'block';
     } else if (nearestZone) {
-      this.promptEl.textContent = nearestZone.getPrompt();
+      const prompt = nearestZone.getPrompt();
+      this.promptEl.textContent = mobile ? prompt.replace('Press E', 'Tap E') : prompt;
       this.promptEl.style.display = 'block';
     } else {
       this.promptEl.style.display = 'none';
