@@ -26,6 +26,9 @@ export class MinimapSystem implements GameSystem {
   /** A* result cache — recomputed only when the snapped start/goal changes. */
   private _pathCache: { key: string; nodes: Array<{ x: number; z: number }> } = { key: '', nodes: [] };
 
+  private overlay: HTMLElement | null = null;
+  private overlayObserver: MutationObserver | null = null;
+
   init(game: Game): void {
     this.walker = game.getSystem<WalkSystem>('player')!;
     this.car = game.getSystem<CarSystem>('car')!;
@@ -37,6 +40,14 @@ export class MinimapSystem implements GameSystem {
     this.buildStreetGraph();
     this.buildStaticMap();
     this.buildOverlayCanvas();
+
+    // Hide minimap while the intro overlay is visible
+    this.overlay = document.getElementById('overlay');
+    this.syncVisibility();
+    this.overlayObserver = new MutationObserver(() => this.syncVisibility());
+    if (this.overlay) {
+      this.overlayObserver.observe(this.overlay, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 
   update(delta: number): void {
@@ -45,7 +56,13 @@ export class MinimapSystem implements GameSystem {
   }
 
   dispose(): void {
+    this.overlayObserver?.disconnect();
     this.canvas.remove();
+  }
+
+  private syncVisibility(): void {
+    const hidden = this.overlay != null && !this.overlay.classList.contains('hidden');
+    this.canvas.style.display = hidden ? 'none' : 'block';
   }
 
   // ---------------------------------------------------------------------------

@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>City Game</title>
+  <title>City Dash</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Russo+One&family=Inter:wght@400;500;600&display=swap');
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
     canvas { display: block; width: 100%; height: 100%; }
@@ -14,34 +16,104 @@
       top: 0; left: 0;
       width: 100%; height: 100%;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.7);
+      background: linear-gradient(180deg, rgba(10,10,30,0.92) 0%, rgba(0,0,0,0.85) 100%);
       z-index: 20;
       cursor: pointer;
-    }
-    #overlay .prompt {
-      color: #fff;
-      font-family: sans-serif;
-      font-size: 1.5rem;
-      text-align: center;
-      line-height: 2;
-    }
-    #overlay .prompt .keys {
-      display: inline-block;
-      background: rgba(255,255,255,0.15);
-      padding: 2px 10px;
-      border-radius: 4px;
-      font-size: 1rem;
-      margin: 0 2px;
+      font-family: 'Inter', sans-serif;
     }
     #overlay.hidden { display: none; }
+
+    /* Title */
+    .intro-title {
+      font-family: 'Russo One', sans-serif;
+      font-size: 5rem;
+      letter-spacing: 0.06em;
+      color: #fff;
+      text-transform: uppercase;
+      text-shadow:
+        0 0 40px rgba(255, 180, 50, 0.5),
+        0 0 80px rgba(255, 120, 0, 0.25);
+      margin-bottom: 0.15em;
+      animation: titlePulse 3s ease-in-out infinite;
+    }
+    .intro-title .accent {
+      color: #ffb432;
+    }
+
+    @keyframes titlePulse {
+      0%, 100% { text-shadow: 0 0 40px rgba(255,180,50,0.5), 0 0 80px rgba(255,120,0,0.25); }
+      50% { text-shadow: 0 0 60px rgba(255,180,50,0.7), 0 0 120px rgba(255,120,0,0.4); }
+    }
+
+    /* Tagline */
+    .intro-tagline {
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      margin-bottom: 3rem;
+    }
+
+    /* Divider */
+    .intro-divider {
+      width: 80px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #ffb432, transparent);
+      border: none;
+      margin-bottom: 2.5rem;
+    }
+
+    /* Prompt area */
+    .intro-prompt {
+      color: rgba(255,255,255,0.85);
+      font-size: 1.15rem;
+      text-align: center;
+      line-height: 2;
+      animation: promptFade 2s ease-in-out infinite;
+    }
+    .intro-prompt .keys {
+      display: inline-block;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      margin: 0 2px;
+    }
+
+    @keyframes promptFade {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Footer branding */
+    .intro-footer {
+      position: absolute;
+      bottom: 2rem;
+      color: rgba(255,255,255,0.25);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
 
     /* Show desktop prompt by default, mobile prompt on touch devices */
     .mobile-prompt { display: none; }
     @media (pointer: coarse) {
       .desktop-prompt { display: none; }
       .mobile-prompt { display: block; }
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 600px) {
+      .intro-title { font-size: 3rem; }
+      .intro-tagline { font-size: 0.85rem; margin-bottom: 2rem; }
+      .intro-prompt { font-size: 1rem; }
     }
 
     /* Prevent long-press context menu and text selection on mobile */
@@ -55,21 +127,26 @@
     }
   </style>
   <script async src="https://jam.pieter.com/2026/widget.js"></script>
+  <script async src="https://vibejam.cc/2026/widget.js"></script>
 </head>
 <body>
   <div id="overlay">
-    <div class="prompt desktop-prompt">
+    <div class="intro-title">City <span class="accent">Dash</span></div>
+    <div class="intro-tagline">Deliver More. Earn More.</div>
+    <hr class="intro-divider" />
+    <div class="intro-prompt desktop-prompt">
       Click to drive<br/>
       <span class="keys">W</span> accelerate &nbsp;
-      <span class="keys">S</span> brake / reverse<br/>
+      <span class="keys">S</span> brake / reverse &nbsp;
       <span class="keys">A</span>
       <span class="keys">D</span> steer
     </div>
-    <div class="prompt mobile-prompt">
+    <div class="intro-prompt mobile-prompt">
       Tap to play<br/>
       Left side — move &nbsp; Right side — look<br/>
       <span class="keys">E</span> button — interact
     </div>
+    <div class="intro-footer">A Vibe Jam 2026 Game</div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
