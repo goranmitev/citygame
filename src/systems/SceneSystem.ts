@@ -38,7 +38,7 @@ export class SceneSystem implements GameSystem {
     this.sun.shadow.camera.bottom = -s;
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 400;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.001;
 
     scene.add(this.sun);

@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EventBus, Events } from './EventBus';
 
 export interface GameSystem {
@@ -12,6 +15,7 @@ export class Game {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
+  readonly composer: EffectComposer;
   private timer = new THREE.Timer();
 
   private systems: GameSystem[] = [];
@@ -35,9 +39,21 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
+
+    // Post-processing pipeline
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+    const bloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.3,   // strength — subtle glow
+      0.4,   // radius
+      0.85,  // threshold — only bright areas bloom
+    );
+    this.composer.addPass(bloom);
 
     if (!canvas) {
       document.body.appendChild(this.renderer.domElement);
@@ -119,12 +135,13 @@ export class Game {
       system.update?.(delta, elapsed);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   };
 
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer.setSize(window.innerWidth, window.innerHeight);
   };
 }
