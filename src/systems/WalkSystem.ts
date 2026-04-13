@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events, CarEnteredEvent, CarExitedEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -43,8 +44,11 @@ export class WalkSystem implements GameSystem {
   private scene!: THREE.Scene;
   private car!: CarSystem;
 
-  // Character mesh group (humanoid placeholder)
+  // Character mesh group (loaded GLB model)
   private characterGroup!: THREE.Group;
+  private mixer: THREE.AnimationMixer | null = null;
+  private runAction: THREE.AnimationAction | null = null;
+  private isMoving = false;
 
   // Camera state
   private camPos = new THREE.Vector3();
@@ -213,7 +217,8 @@ export class WalkSystem implements GameSystem {
     if (state.right)    { dx += cosY; dz -= sinY; }
 
     const len = Math.sqrt(dx * dx + dz * dz);
-    if (len > 0) {
+    const moving = len > 0;
+    if (moving) {
       dx = (dx / len) * speed * delta;
       dz = (dz / len) * speed * delta;
 
@@ -223,6 +228,19 @@ export class WalkSystem implements GameSystem {
       this.tryMove(0, dz);
     }
 
+    // Play / stop run animation
+    if (moving !== this.isMoving) {
+      this.isMoving = moving;
+      if (this.runAction) {
+        if (moving) {
+          this.runAction.play();
+        } else {
+          this.runAction.stop();
+        }
+      }
+    }
+
+    if (this.mixer) this.mixer.update(delta);
     this.updateCharacterMesh();
   }
 
@@ -322,72 +340,49 @@ export class WalkSystem implements GameSystem {
   }
 
   // ---------------------------------------------------------------------------
-  // Humanoid placeholder mesh
+  // GLB character model
   // ---------------------------------------------------------------------------
 
   private buildCharacterMesh(): void {
     this.characterGroup = new THREE.Group();
-
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5c5a3, roughness: 0.8 });
-    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x3a6bbf, roughness: 0.9 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a2a4a, roughness: 0.9 });
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x3b2507, roughness: 1.0 });
-    const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
-
-    const headGeo = new THREE.BoxGeometry(0.28, 0.3, 0.28);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.set(0, 1.405, 0);
-    head.castShadow = true;
-    this.characterGroup.add(head);
-
-    const hairGeo = new THREE.BoxGeometry(0.30, 0.08, 0.30);
-    const hair = new THREE.Mesh(hairGeo, hairMat);
-    hair.position.set(0, 1.585, 0);
-    this.characterGroup.add(hair);
-
-    const torsoGeo = new THREE.BoxGeometry(0.38, 0.48, 0.22);
-    const torso = new THREE.Mesh(torsoGeo, shirtMat);
-    torso.position.set(0, 1.005, 0);
-    torso.castShadow = true;
-    this.characterGroup.add(torso);
-
-    for (const sx of [-1, 1]) {
-      const uaGeo = new THREE.BoxGeometry(0.12, 0.28, 0.14);
-      const ua = new THREE.Mesh(uaGeo, shirtMat);
-      ua.position.set(sx * 0.27, 1.025, 0);
-      ua.castShadow = true;
-      this.characterGroup.add(ua);
-
-      const faGeo = new THREE.BoxGeometry(0.10, 0.25, 0.12);
-      const fa = new THREE.Mesh(faGeo, skinMat);
-      fa.position.set(sx * 0.27, 0.765, 0);
-      this.characterGroup.add(fa);
-
-      const hGeo = new THREE.BoxGeometry(0.09, 0.09, 0.09);
-      const hand = new THREE.Mesh(hGeo, skinMat);
-      hand.position.set(sx * 0.27, 0.625, 0);
-      this.characterGroup.add(hand);
-    }
-
-    for (const sx of [-1, 1]) {
-      const ulGeo = new THREE.BoxGeometry(0.15, 0.35, 0.17);
-      const ul = new THREE.Mesh(ulGeo, pantsMat);
-      ul.position.set(sx * 0.10, 0.585, 0);
-      ul.castShadow = true;
-      this.characterGroup.add(ul);
-
-      const llGeo = new THREE.BoxGeometry(0.13, 0.34, 0.15);
-      const ll = new THREE.Mesh(llGeo, pantsMat);
-      ll.position.set(sx * 0.10, 0.235, 0);
-      this.characterGroup.add(ll);
-
-      const shGeo = new THREE.BoxGeometry(0.14, 0.09, 0.22);
-      const shoe = new THREE.Mesh(shGeo, shoeMat);
-      shoe.position.set(sx * 0.10, 0.045, 0.03);
-      this.characterGroup.add(shoe);
-    }
-
     this.scene.add(this.characterGroup);
+
+    const loader = new GLTFLoader();
+    loader.load('delivery_guy_running.glb', (gltf) => {
+      const model = gltf.scene;
+
+      // Scale model to match PLAYER_HEIGHT
+      const box = new THREE.Box3().setFromObject(model);
+      const modelHeight = box.max.y - box.min.y;
+      const scale = PLAYER_HEIGHT / modelHeight;
+      model.scale.setScalar(scale);
+
+      // Ground the model (shift so feet sit at y=0)
+      const scaledMinY = box.min.y * scale;
+      model.position.y = -scaledMinY;
+
+      model.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = true;
+          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (mat) {
+            mat.transparent = false;
+            mat.depthWrite = true;
+            mat.alphaTest = 0;
+          }
+        }
+      });
+
+      this.characterGroup.add(model);
+
+      // Set up animations
+      if (gltf.animations.length > 0) {
+        this.mixer = new THREE.AnimationMixer(model);
+
+        this.runAction = this.mixer.clipAction(gltf.animations[0]);
+        this.runAction.setLoop(THREE.LoopRepeat, Infinity);
+      }
+    });
   }
 
   private buildPromptHUD(): void {
