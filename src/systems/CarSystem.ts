@@ -12,6 +12,8 @@ import {
   CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
 } from '../constants';
 
+const _camHit = new THREE.Vector3();
+
 export class CarSystem implements GameSystem {
   readonly name = 'car';
 
@@ -47,6 +49,8 @@ export class CarSystem implements GameSystem {
   private _tryBox = new THREE.Box3();
   private _idealPos = new THREE.Vector3();
   private _lookAt = new THREE.Vector3();
+  private _camRay = new THREE.Ray();
+  private _camRayDir = new THREE.Vector3();
 
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
@@ -223,11 +227,27 @@ export class CarSystem implements GameSystem {
     const dx = sinH * this.speed * delta;
     const dz = cosH * this.speed * delta;
 
-    this.tryMove(dx, 0);
-    this.tryMove(0, dz);
+    const blockedX = !this.tryMove(dx, 0);
+    const blockedZ = !this.tryMove(0, dz);
+
+    if (blockedX && blockedZ) {
+      // Head-on hit — bounce back hard
+      this.speed *= -0.3;
+    } else if (blockedX) {
+      // Wall perpendicular to X — auto-steer to align along Z
+      const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
+      this.heading -= correction;
+      this.speed *= 0.97;
+    } else if (blockedZ) {
+      // Wall perpendicular to Z — auto-steer to align along X
+      const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
+      this.heading += correction;
+      this.speed *= 0.97;
+    }
   }
 
-  private tryMove(dx: number, dz: number): void {
+  /** Try to move along one axis. Returns true if the move succeeded. */
+  private tryMove(dx: number, dz: number): boolean {
     const nx = this.position.x + dx;
     const nz = this.position.z + dz;
 
@@ -236,8 +256,7 @@ export class CarSystem implements GameSystem {
 
     for (const box of this.colliders) {
       if (this._tryBox.intersectsBox(box)) {
-        this.speed *= -0.2;
-        return;
+        return false;
       }
     }
 
@@ -245,10 +264,13 @@ export class CarSystem implements GameSystem {
     const clampedX = Math.max(this.boundsMin.x + CAR_HALF_W, Math.min(this.boundsMax.x - CAR_HALF_W, nx));
     const clampedZ = Math.max(this.boundsMin.y + CAR_HALF_L, Math.min(this.boundsMax.y - CAR_HALF_L, nz));
     if (clampedX !== nx || clampedZ !== nz) {
-      this.speed *= -0.2;
+      this.position.x = clampedX;
+      this.position.z = clampedZ;
+      return false;
     }
     this.position.x = clampedX;
     this.position.z = clampedZ;
+    return true;
   }
 
   private updateCarMesh(): void {
@@ -286,6 +308,27 @@ export class CarSystem implements GameSystem {
       this.position.y + 1.2,
       this.position.z + cosA * 2,
     );
+
+    // Pull camera forward if a building AABB blocks the line of sight
+    this._camRayDir.subVectors(this._idealPos, this._lookAt);
+    const fullDist = this._camRayDir.length();
+    if (fullDist > 0.01) {
+      this._camRayDir.divideScalar(fullDist); // normalize
+      this._camRay.set(this._lookAt, this._camRayDir);
+      let closest = fullDist;
+      for (let i = 0; i < this.colliders.length; i++) {
+        const hitPt = this._camRay.intersectBox(this.colliders[i], _camHit);
+        if (hitPt) {
+          const d = hitPt.distanceTo(this._lookAt);
+          if (d < closest) closest = d;
+        }
+      }
+      if (closest < fullDist) {
+        // Place camera slightly in front of the hit point
+        const safeDist = Math.max(0.5, closest - 0.3);
+        this._idealPos.copy(this._lookAt).addScaledVector(this._camRayDir, safeDist);
+      }
+    }
 
     const t = Math.min(1, CAR_CAM_LERP * delta);
     this.camPos.lerp(this._idealPos, t);

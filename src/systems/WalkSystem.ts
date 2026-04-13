@@ -20,6 +20,10 @@ export interface InteractZone {
   onInteract(): void;
 }
 
+const _camHit = new THREE.Vector3();
+const _camRay = new THREE.Ray();
+const _camRayDir = new THREE.Vector3();
+
 export class WalkSystem implements GameSystem {
   /** Name 'player' — CityBuilder still uses getSystem('player') to set spawn. */
   readonly name = 'player';
@@ -273,6 +277,26 @@ export class WalkSystem implements GameSystem {
       this.position.z,
     );
 
+    // Pull camera forward if a building AABB blocks the line of sight
+    _camRayDir.subVectors(idealPos, lookAt);
+    const fullDist = _camRayDir.length();
+    if (fullDist > 0.01) {
+      _camRayDir.divideScalar(fullDist);
+      _camRay.set(lookAt, _camRayDir);
+      let closest = fullDist;
+      for (let i = 0; i < this.colliders.length; i++) {
+        const hitPt = _camRay.intersectBox(this.colliders[i], _camHit);
+        if (hitPt) {
+          const d = hitPt.distanceTo(lookAt);
+          if (d < closest) closest = d;
+        }
+      }
+      if (closest < fullDist) {
+        const safeDist = Math.max(0.5, closest - 0.3);
+        idealPos.copy(lookAt).addScaledVector(_camRayDir, safeDist);
+      }
+    }
+
     const t = Math.min(1, WALK_CAM_LERP * delta);
     this.camPos.lerp(idealPos, t);
     this.camTarget.lerp(lookAt, t);
@@ -312,54 +336,54 @@ export class WalkSystem implements GameSystem {
 
     const headGeo = new THREE.BoxGeometry(0.28, 0.3, 0.28);
     const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.set(0, 1.58, 0);
+    head.position.set(0, 1.405, 0);
     head.castShadow = true;
     this.characterGroup.add(head);
 
     const hairGeo = new THREE.BoxGeometry(0.30, 0.08, 0.30);
     const hair = new THREE.Mesh(hairGeo, hairMat);
-    hair.position.set(0, 1.76, 0);
+    hair.position.set(0, 1.585, 0);
     this.characterGroup.add(hair);
 
     const torsoGeo = new THREE.BoxGeometry(0.38, 0.48, 0.22);
     const torso = new THREE.Mesh(torsoGeo, shirtMat);
-    torso.position.set(0, 1.18, 0);
+    torso.position.set(0, 1.005, 0);
     torso.castShadow = true;
     this.characterGroup.add(torso);
 
     for (const sx of [-1, 1]) {
       const uaGeo = new THREE.BoxGeometry(0.12, 0.28, 0.14);
       const ua = new THREE.Mesh(uaGeo, shirtMat);
-      ua.position.set(sx * 0.27, 1.20, 0);
+      ua.position.set(sx * 0.27, 1.025, 0);
       ua.castShadow = true;
       this.characterGroup.add(ua);
 
       const faGeo = new THREE.BoxGeometry(0.10, 0.25, 0.12);
       const fa = new THREE.Mesh(faGeo, skinMat);
-      fa.position.set(sx * 0.27, 0.94, 0);
+      fa.position.set(sx * 0.27, 0.765, 0);
       this.characterGroup.add(fa);
 
       const hGeo = new THREE.BoxGeometry(0.09, 0.09, 0.09);
       const hand = new THREE.Mesh(hGeo, skinMat);
-      hand.position.set(sx * 0.27, 0.80, 0);
+      hand.position.set(sx * 0.27, 0.625, 0);
       this.characterGroup.add(hand);
     }
 
     for (const sx of [-1, 1]) {
       const ulGeo = new THREE.BoxGeometry(0.15, 0.35, 0.17);
       const ul = new THREE.Mesh(ulGeo, pantsMat);
-      ul.position.set(sx * 0.10, 0.76, 0);
+      ul.position.set(sx * 0.10, 0.585, 0);
       ul.castShadow = true;
       this.characterGroup.add(ul);
 
       const llGeo = new THREE.BoxGeometry(0.13, 0.34, 0.15);
       const ll = new THREE.Mesh(llGeo, pantsMat);
-      ll.position.set(sx * 0.10, 0.41, 0);
+      ll.position.set(sx * 0.10, 0.235, 0);
       this.characterGroup.add(ll);
 
       const shGeo = new THREE.BoxGeometry(0.14, 0.09, 0.22);
       const shoe = new THREE.Mesh(shGeo, shoeMat);
-      shoe.position.set(sx * 0.10, 0.22, 0.03);
+      shoe.position.set(sx * 0.10, 0.045, 0.03);
       this.characterGroup.add(shoe);
     }
 

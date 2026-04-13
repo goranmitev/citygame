@@ -116,7 +116,7 @@ export class DeliverySystem implements GameSystem {
       const cx = block.x + block.width / 2;
       const cz = block.z + block.depth + 2;
 
-      const signMesh = this.buildSign(block, name);
+      const signMesh = this.buildSign(block, name, cx);
       const { group: markerGroup, cap: markerCap } = this.buildMarker(cx, cz, 0x22cc44);
       markerGroup.visible = false;
 
@@ -341,7 +341,7 @@ export class DeliverySystem implements GameSystem {
   // ---------------------------------------------------------------------------
   // 3D helpers
 
-  private buildSign(block: BlockDef, name: string): THREE.Mesh {
+  private buildSign(block: BlockDef, name: string, cx: number): THREE.Mesh {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 96;
@@ -362,7 +362,21 @@ export class DeliverySystem implements GameSystem {
     const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
     const geo = new THREE.PlaneGeometry(4, 0.75);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(block.x + block.width / 2, 3.5, block.z + block.depth + 0.12);
+
+    // Find the plot with the largest Z face (closest to south/+Z side of block)
+    // and place the sign flush against that building wall
+    let signX = cx;
+    let signZ = block.z + block.depth; // fallback
+    if (block.plots.length > 0) {
+      let best = block.plots[0];
+      for (const p of block.plots) {
+        if (p.z + p.depth > best.z + best.depth) best = p;
+      }
+      signX = best.x + best.width / 2;
+      signZ = best.z + best.depth + 0.02; // flush on the south wall
+    }
+
+    mesh.position.set(signX, 3.5, signZ);
     this.scene.add(mesh);
     return mesh;
   }
