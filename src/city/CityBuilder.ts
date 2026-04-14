@@ -73,7 +73,7 @@ export class CityBuilder implements GameSystem {
 
     for (let tile = 0; tile < ATLAS_TILE_COUNT; tile++) {
       this.mergeBucket(scene, buckets.walls[tile], mats.wall[tile], true);
-      this.mergeBucket(scene, buckets.groundFloors[tile], mats.groundFloor[tile], true);
+      // this.mergeBucket(scene, buckets.groundFloors[tile], mats.groundFloor[tile], true);
       this.mergeBucket(scene, buckets.roofs[tile], mats.roof[tile], true);
     }
     this.mergeBucket(scene, buckets.windows, mats.window, false);
@@ -149,7 +149,7 @@ export class CityBuilder implements GameSystem {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     // Select bottom-left quadrant (grass) from the 2x2 atlas
     texture.repeat.set((this.layout.totalWidth + 40) / 40, (this.layout.totalDepth + 40) / 40);
-    texture.offset.set(0, 0);
+    texture.offset.set(0, 1);
     const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 });
     const ground = new THREE.Mesh(geo, mat);
     ground.rotation.x = -Math.PI / 2;
@@ -177,12 +177,12 @@ export class CityBuilder implements GameSystem {
       roadGeos.push(geo);
     }
 
-    // Merge roads — use ground atlas tile (0,0) image = asphalt (tileX=0, tileY=1 in UV)
+    // Merge roads — use ground atlas tile (0,0) image = asphalt
     const roadMerged = mergeGeometries(roadGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (roadMerged) {
       const groundMap = new THREE.TextureLoader().load('/textures/ground-atlas.webp');
       groundMap.wrapS = groundMap.wrapT = THREE.ClampToEdgeWrapping;
-      const roadMat = makeAtlasMaterial(groundMap, 0, 1, 0.85);
+      const roadMat = makeAtlasMaterial(groundMap, 0, 3, 0.85);
       const mesh = new THREE.Mesh(roadMerged, roadMat);
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;

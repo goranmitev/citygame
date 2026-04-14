@@ -3,7 +3,7 @@ import { PlotDef } from './CityLayout';
 import { createRNG, randRange } from '../utils/random';
 
 const FLOOR_HEIGHT = 3.2;
-const ATLAS_TILES = 2; // 2x2 atlas
+const ATLAS_TILES = 4; // 4x4 atlas
 export const ATLAS_TILE_COUNT = ATLAS_TILES * ATLAS_TILES;
 export const UV_WORLD_SCALE = 4.0;
 
@@ -90,13 +90,13 @@ function createMaterials() {
     const tileY = Math.floor(tile / ATLAS_TILES);
 
     wallMaterials.push(makeAtlasMaterial(wallMap, tileX, tileY, 0.85));
-    groundFloorMaterials.push(makeAtlasMaterial(wallMap, tileX, tileY, 0.8));
+    // groundFloorMaterials.push(makeAtlasMaterial(wallMap, tileX, tileY, 0.8));
     roofMaterials.push(makeAtlasMaterial(roofMap, tileX, tileY, 0.9));
   }
 
   return {
     wall: wallMaterials,
-    groundFloor: groundFloorMaterials,
+    // groundFloor: groundFloorMaterials,
     window: new THREE.MeshStandardMaterial({ color: WINDOW_COLOR, roughness: 0.05, metalness: 0.6 }),
     windowFrame: new THREE.MeshStandardMaterial({ color: WINDOW_FRAME_COLOR, roughness: 0.7 }),
     roof: roofMaterials,
