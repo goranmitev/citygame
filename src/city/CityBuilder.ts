@@ -5,9 +5,8 @@ import { WalkSystem } from '../systems/WalkSystem';
 import { CarSystem } from '../systems/CarSystem';
 import { PedestrianSystem } from '../systems/PedestrianSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
-import { createBuckets, pushBuilding, getMaterials } from './BuildingFactory';
+import { ATLAS_TILE_COUNT, createBuckets, pushBuilding, getMaterials, makeAtlasMaterial, UV_WORLD_SCALE } from './BuildingFactory';
 import { buildPark, getParkMaterials, mergeParkGeos } from './ParkFactory';
-import { ROAD_COLOR, SIDEWALK_COLOR, GROUND_COLOR, MARKING_COLOR } from '../constants';
 
 /**
  * Assembles the city using merged geometry for maximum draw-call efficiency.
@@ -72,11 +71,13 @@ export class CityBuilder implements GameSystem {
 
     const mats = getMaterials();
 
-    this.mergeBucket(scene, buckets.walls, mats.wall, true);
-    this.mergeBucket(scene, buckets.groundFloors, mats.groundFloor, true);
+    for (let tile = 0; tile < ATLAS_TILE_COUNT; tile++) {
+      this.mergeBucket(scene, buckets.walls[tile], mats.wall[tile], true);
+      this.mergeBucket(scene, buckets.groundFloors[tile], mats.groundFloor[tile], true);
+      this.mergeBucket(scene, buckets.roofs[tile], mats.roof[tile], true);
+    }
     this.mergeBucket(scene, buckets.windows, mats.window, false);
     this.mergeBucket(scene, buckets.windowFrames, mats.windowFrame, false);
-    this.mergeBucket(scene, buckets.roofs, mats.roof, true);
 
     const pm = getParkMaterials();
     mergeParkGeos(scene, parkGrass, pm.grass, false);
@@ -144,7 +145,12 @@ export class CityBuilder implements GameSystem {
       this.layout.totalWidth + 40,
       this.layout.totalDepth + 40,
     );
-    const mat = new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 0.95 });
+    const texture = new THREE.TextureLoader().load('/textures/ground-atlas.webp');
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    // Select bottom-left quadrant (grass) from the 2x2 atlas
+    texture.repeat.set((this.layout.totalWidth + 40) / 40, (this.layout.totalDepth + 40) / 40);
+    texture.offset.set(0, 0);
+    const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 });
     const ground = new THREE.Mesh(geo, mat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(this.layout.totalWidth / 2, -0.05, this.layout.totalDepth / 2);
@@ -152,103 +158,37 @@ export class CityBuilder implements GameSystem {
     ground.updateMatrix();
     ground.matrixAutoUpdate = false;
     scene.add(ground);
-  }
 
-  /** Returns sub-segments of [start, end] that are not covered by any blocked range. */
-  private passableSegments(
-    start: number,
-    end: number,
-    blocked: Array<[number, number]>,
-  ): Array<[number, number]> {
-    blocked.sort((a, b) => a[0] - b[0]);
-    const segs: Array<[number, number]> = [];
-    let cur = start;
-    for (const [b0, b1] of blocked) {
-      if (b0 > cur) segs.push([cur, Math.min(b0, end)]);
-      cur = Math.max(cur, b1);
-      if (cur >= end) break;
-    }
-    if (cur < end) segs.push([cur, end]);
-    return segs;
   }
-
   private createRoads(scene: THREE.Scene): void {
     const roadGeos: THREE.BufferGeometry[] = [];
-    const markingGeos: THREE.BufferGeometry[] = [];
-
-    const hStreets = this.layout.streets.filter(s => s.width > s.depth);
-    const vStreets = this.layout.streets.filter(s => s.depth >= s.width);
 
     for (const street of this.layout.streets) {
       const geo = new THREE.PlaneGeometry(street.width, street.depth);
+      // Scale UVs to world size for atlas tiling
+      const ruv = geo.getAttribute('uv');
+      for (let i = 0; i < ruv.count; i++) {
+        ruv.setXY(i, ruv.getX(i) * street.width / UV_WORLD_SCALE, ruv.getY(i) * street.depth / UV_WORLD_SCALE);
+      }
+      ruv.needsUpdate = true;
       const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
       m.setPosition(street.x + street.width / 2, 0.01, street.z + street.depth / 2);
       geo.applyMatrix4(m);
       roadGeos.push(geo);
-
-      // Lane divider lines — one dashed line per lane boundary, skip intersections
-      const isH = street.width > street.depth;
-      const dashLen = 2;
-      const gap = 3;
-      const LANE_WIDTH = 3.5;
-
-      if (isH) {
-        const roadW = street.depth;
-        const numLanes = Math.max(2, Math.round(roadW / LANE_WIDTH));
-        const blocked: Array<[number, number]> = vStreets.map(v => [v.x, v.x + v.width]);
-        for (let lane = 1; lane < numLanes; lane++) {
-          const lineZ = street.z + lane * (roadW / numLanes);
-          for (const [segStart, segEnd] of this.passableSegments(street.x, street.x + street.width, blocked)) {
-            const segLen = segEnd - segStart;
-            for (let d = 0; d < segLen; d += dashLen + gap) {
-              const dLen = Math.min(dashLen, segLen - d);
-              const dGeo = new THREE.PlaneGeometry(dLen, 0.15);
-              const dm = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-              dm.setPosition(segStart + d + dLen / 2, 0.02, lineZ);
-              dGeo.applyMatrix4(dm);
-              markingGeos.push(dGeo);
-            }
-          }
-        }
-      } else {
-        const roadW = street.width;
-        const numLanes = Math.max(2, Math.round(roadW / LANE_WIDTH));
-        const blocked: Array<[number, number]> = hStreets.map(h => [h.z, h.z + h.depth]);
-        for (let lane = 1; lane < numLanes; lane++) {
-          const lineX = street.x + lane * (roadW / numLanes);
-          for (const [segStart, segEnd] of this.passableSegments(street.z, street.z + street.depth, blocked)) {
-            const segLen = segEnd - segStart;
-            for (let d = 0; d < segLen; d += dashLen + gap) {
-              const dLen = Math.min(dashLen, segLen - d);
-              const dGeo = new THREE.PlaneGeometry(0.15, dLen);
-              const dm = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-              dm.setPosition(lineX, 0.02, segStart + d + dLen / 2);
-              dGeo.applyMatrix4(dm);
-              markingGeos.push(dGeo);
-            }
-          }
-        }
-      }
     }
 
-    // Merge roads
+    // Merge roads — use ground atlas tile (0,0) image = asphalt (tileX=0, tileY=1 in UV)
     const roadMerged = mergeGeometries(roadGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (roadMerged) {
-      const mesh = new THREE.Mesh(roadMerged, new THREE.MeshStandardMaterial({ color: ROAD_COLOR, roughness: 0.85 }));
+      const groundMap = new THREE.TextureLoader().load('/textures/ground-atlas.webp');
+      groundMap.wrapS = groundMap.wrapT = THREE.ClampToEdgeWrapping;
+      const roadMat = makeAtlasMaterial(groundMap, 0, 1, 0.85);
+      const mesh = new THREE.Mesh(roadMerged, roadMat);
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
     }
     for (const g of roadGeos) g.dispose();
-
-    // Merge markings
-    const markingMerged = mergeGeometries(markingGeos.map((g) => g.index ? g.toNonIndexed() : g), false);
-    if (markingMerged) {
-      const mesh = new THREE.Mesh(markingMerged, new THREE.MeshStandardMaterial({ color: MARKING_COLOR, roughness: 0.5 }));
-      mesh.matrixAutoUpdate = false;
-      scene.add(mesh);
-    }
-    for (const g of markingGeos) g.dispose();
   }
 
   private createZebraCrossings(scene: THREE.Scene): void {
@@ -329,6 +269,16 @@ export class CityBuilder implements GameSystem {
 
     for (const sw of this.layout.sidewalks) {
       const geo = new THREE.BoxGeometry(sw.width, height, sw.depth);
+      // Scale top-face UVs to world size for atlas tiling (top face = verts 8-11)
+      const suv = geo.getAttribute('uv');
+      for (let i = 0; i < suv.count; i++) {
+        // BoxGeometry faces: +x,-x,+y,-y,+z,-z (4 verts each). Top (+y) = verts 8-11.
+        const face = Math.floor(i / 4);
+        if (face === 2) { // +y (top face)
+          suv.setXY(i, suv.getX(i) * sw.width / UV_WORLD_SCALE, suv.getY(i) * sw.depth / UV_WORLD_SCALE);
+        }
+      }
+      suv.needsUpdate = true;
       const m = new THREE.Matrix4().makeTranslation(
         sw.x + sw.width / 2,
         height / 2,
@@ -337,11 +287,13 @@ export class CityBuilder implements GameSystem {
       geo.applyMatrix4(m);
       geos.push(geo);
     }
-
-
+    // Use ground atlas tile (1,1) image = cobblestone (tileX=1, tileY=0 in UV)
     const merged = mergeGeometries(geos.map((g) => g.index ? g.toNonIndexed() : g), false);
     if (merged) {
-      const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: SIDEWALK_COLOR, roughness: 0.8 }));
+      const groundMap = new THREE.TextureLoader().load('/textures/ground-atlas.webp');
+      groundMap.wrapS = groundMap.wrapT = THREE.ClampToEdgeWrapping;
+      const swMat = makeAtlasMaterial(groundMap, 1, 0, 0.8);
+      const mesh = new THREE.Mesh(merged, swMat);
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);

@@ -1,57 +1,105 @@
 import * as THREE from 'three';
 import { PlotDef } from './CityLayout';
-import { createRNG, randRange, randPick } from '../utils/random';
+import { createRNG, randRange } from '../utils/random';
 
 const FLOOR_HEIGHT = 3.2;
+const ATLAS_TILES = 2; // 2x2 atlas
+export const ATLAS_TILE_COUNT = ATLAS_TILES * ATLAS_TILES;
+export const UV_WORLD_SCALE = 4.0;
 
-const WALL_COLORS = [
-  0xf2c57c, // warm yellow
-  0xe8a87c, // peach / terracotta
-  0xd4e6b5, // light green
-  0xb5d4e6, // sky blue
-  0xf5b5b5, // salmon pink
-  0xe6ccf5, // lavender
-  0xf5deb3, // wheat gold
-  0xf0e68c, // khaki yellow
-  0xffcba4, // light apricot
-  0xc9e4de, // mint
-  0xf7c8a0, // pastel orange
-  0xd5e8d4, // sage green
-  0xe0c8f0, // soft purple
-  0xfce4ec, // blush pink
-  0xc5dbe0, // powder blue
-  0xfff8dc, // cornsilk
-];
 const WINDOW_COLOR = 0x8ec8e8;
 const WINDOW_FRAME_COLOR = 0xf5f0e8;
-const ROOF_COLORS = [0xb85c38, 0xc96a4b, 0xa34a28, 0x8b4513, 0x7a3b10];
 
 /**
  * Geometry buckets keyed by material name.
  * Accumulated across all buildings, then merged into single meshes.
  */
 export interface GeometryBuckets {
-  walls: THREE.BufferGeometry[];
-  groundFloors: THREE.BufferGeometry[];
+  walls: THREE.BufferGeometry[][];
+  groundFloors: THREE.BufferGeometry[][];
   windows: THREE.BufferGeometry[];
   windowFrames: THREE.BufferGeometry[];
-  roofs: THREE.BufferGeometry[];
+  roofs: THREE.BufferGeometry[][];
+}
+
+function createLayeredBuckets(): THREE.BufferGeometry[][] {
+  return Array.from({ length: ATLAS_TILE_COUNT }, () => [] as THREE.BufferGeometry[]);
 }
 
 export function createBuckets(): GeometryBuckets {
-  return { walls: [], groundFloors: [], windows: [], windowFrames: [], roofs: [] };
+  return {
+    walls: createLayeredBuckets(),
+    groundFloors: createLayeredBuckets(),
+    windows: [],
+    windowFrames: [],
+    roofs: createLayeredBuckets(),
+  };
+}
+
+/** Create an atlas-tiling material. UVs are world-scaled; the shader does
+ *  per-pixel fract() to tile within the correct atlas quadrant. */
+export function makeAtlasMaterial(
+  baseMap: THREE.Texture,
+  tileX: number,
+  tileY: number,
+  roughness: number,
+): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ map: baseMap, roughness });
+  const atlasOffset = new THREE.Vector2(tileX / ATLAS_TILES, tileY / ATLAS_TILES);
+  const atlasScale = new THREE.Vector2(1 / ATLAS_TILES, 1 / ATLAS_TILES);
+
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.atlasOffset = { value: atlasOffset };
+    shader.uniforms.atlasScale = { value: atlasScale };
+    shader.fragmentShader =
+      'uniform vec2 atlasOffset;\nuniform vec2 atlasScale;\n' +
+      shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+  vec2 tiledUv = atlasOffset + fract(vMapUv) * atlasScale;
+  vec4 sampledDiffuseColor = texture2D(map, tiledUv);
+  #ifdef DECODE_VIDEO_TEXTURE
+    sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
+  #endif
+  diffuseColor *= sampledDiffuseColor;
+#endif`,
+      );
+  };
+
+  return mat;
 }
 
 // Shared materials — created once
 let _materials: ReturnType<typeof createMaterials> | null = null;
 
 function createMaterials() {
+  const loader = new THREE.TextureLoader();
+  const wallMap = loader.load('/textures/walls-atlas.webp');
+  const roofMap = loader.load('/textures/roofs-atlas.webp');
+
+  // No repeat/offset needed — the shader handles atlas tiling
+  wallMap.wrapS = wallMap.wrapT = THREE.ClampToEdgeWrapping;
+  roofMap.wrapS = roofMap.wrapT = THREE.ClampToEdgeWrapping;
+
+  const wallMaterials: THREE.MeshStandardMaterial[] = [];
+  const groundFloorMaterials: THREE.MeshStandardMaterial[] = [];
+  const roofMaterials: THREE.MeshStandardMaterial[] = [];
+
+  for (let tile = 0; tile < ATLAS_TILE_COUNT; tile++) {
+    const tileX = tile % ATLAS_TILES;
+    const tileY = Math.floor(tile / ATLAS_TILES);
+
+    wallMaterials.push(makeAtlasMaterial(wallMap, tileX, tileY, 0.85));
+    groundFloorMaterials.push(makeAtlasMaterial(wallMap, tileX, tileY, 0.8));
+    roofMaterials.push(makeAtlasMaterial(roofMap, tileX, tileY, 0.9));
+  }
+
   return {
-    wall: new THREE.MeshStandardMaterial({ color: 0xd4c5a9, roughness: 0.85, vertexColors: true }),
-    groundFloor: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }),
+    wall: wallMaterials,
+    groundFloor: groundFloorMaterials,
     window: new THREE.MeshStandardMaterial({ color: WINDOW_COLOR, roughness: 0.05, metalness: 0.6 }),
     windowFrame: new THREE.MeshStandardMaterial({ color: WINDOW_FRAME_COLOR, roughness: 0.7 }),
-    roof: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }),
+    roof: roofMaterials,
   };
 }
 
@@ -62,33 +110,59 @@ export function getMaterials() {
 
 // Reusable temp objects
 const _mat4 = new THREE.Matrix4();
-const _color = new THREE.Color();
 
-/** Apply a position transform to a geometry and optionally set vertex colors. */
+/** Apply a position transform to a geometry. */
 function positionGeo(
   geo: THREE.BufferGeometry,
   x: number, y: number, z: number,
-  color?: number,
 ): THREE.BufferGeometry {
   const clone = geo.clone();
   _mat4.makeTranslation(x, y, z);
   clone.applyMatrix4(_mat4);
-  if (color !== undefined) {
-    applyVertexColor(clone, color);
-  }
   return clone;
 }
 
-function applyVertexColor(geo: THREE.BufferGeometry, hex: number): void {
-  _color.set(hex);
-  const count = geo.getAttribute('position').count;
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    colors[i * 3] = _color.r;
-    colors[i * 3 + 1] = _color.g;
-    colors[i * 3 + 2] = _color.b;
+function applyWorldScaleUVs(geo: THREE.BufferGeometry): void {
+  const uv = geo.getAttribute('uv');
+  if (!uv) return;
+
+  const params = (geo as any).parameters;
+  if (params && params.width != null && params.height != null && params.depth != null) {
+    applyBoxGeometryRepeatUVs(geo, params.width, params.height, params.depth);
+    return;
   }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  uv.needsUpdate = true;
+}
+
+function applyBoxGeometryRepeatUVs(
+  geo: THREE.BufferGeometry,
+  width: number,
+  height: number,
+  depth: number,
+): void {
+  const uv = geo.getAttribute('uv');
+  if (!uv) return;
+
+  // BoxGeometry has 6 faces, 4 verts each, in order: +x, -x, +y, -y, +z, -z
+  const repeats = [
+    { u: depth / UV_WORLD_SCALE, v: height / UV_WORLD_SCALE },  // +x
+    { u: depth / UV_WORLD_SCALE, v: height / UV_WORLD_SCALE },  // -x
+    { u: width / UV_WORLD_SCALE, v: depth / UV_WORLD_SCALE },   // +y
+    { u: width / UV_WORLD_SCALE, v: depth / UV_WORLD_SCALE },   // -y
+    { u: width / UV_WORLD_SCALE, v: height / UV_WORLD_SCALE },  // +z
+    { u: width / UV_WORLD_SCALE, v: height / UV_WORLD_SCALE },  // -z
+  ];
+
+  let index = 0;
+  for (let face = 0; face < 6; face++) {
+    const { u: faceU, v: faceV } = repeats[face];
+    for (let vert = 0; vert < 4; vert++, index++) {
+      uv.setXY(index, uv.getX(index) * faceU, uv.getY(index) * faceV);
+    }
+  }
+
+  uv.needsUpdate = true;
 }
 
 // Pre-created shared geometries (created lazily)
@@ -115,26 +189,27 @@ export function pushBuilding(
 ): THREE.Box3 {
   const rng = createRNG(seed);
   const height = plot.floors * FLOOR_HEIGHT;
-  const wallColor = randPick(rng, WALL_COLORS);
-  const roofColor = randPick(rng, ROOF_COLORS);
   const cx = plot.x + plot.width / 2;
   const cz = plot.z + plot.depth / 2;
 
   // Main body
+  const wallTile = Math.floor(rng() * ATLAS_TILE_COUNT);
+
   const bodyGeo = new THREE.BoxGeometry(plot.width, height, plot.depth);
-  buckets.walls.push(positionGeo(bodyGeo, cx, height / 2, cz, wallColor));
+  applyWorldScaleUVs(bodyGeo);
+  buckets.walls[wallTile].push(positionGeo(bodyGeo, cx, height / 2, cz));
 
   // Darker ground floor overlay
   const gh = FLOOR_HEIGHT * 0.9;
   const gfGeo = new THREE.BoxGeometry(plot.width + 0.05, gh, plot.depth + 0.05);
-  const gfColor = _color.set(wallColor).multiplyScalar(0.8).getHex();
-  buckets.groundFloors.push(positionGeo(gfGeo, cx, gh / 2, cz, gfColor));
+  applyWorldScaleUVs(gfGeo);
+  buckets.groundFloors[wallTile].push(positionGeo(gfGeo, cx, gh / 2, cz));
 
   // Windows
   pushWindows(buckets, plot, height, rng);
 
   // Roof
-  pushRoof(buckets, plot, height, roofColor, rng);
+  pushRoof(buckets, plot, height, rng);
 
   return new THREE.Box3(
     new THREE.Vector3(plot.x, 0, plot.z),
@@ -210,11 +285,11 @@ function pushRoof(
   buckets: GeometryBuckets,
   plot: PlotDef,
   height: number,
-  roofColor: number,
   rng: () => number,
 ): void {
   const cx = plot.x + plot.width / 2;
   const cz = plot.z + plot.depth / 2;
+  const roofTile = Math.floor(rng() * ATLAS_TILE_COUNT);
 
   if (rng() > 0.4) {
     // Pitched roof
@@ -233,27 +308,29 @@ function pushRoof(
       depth: extrudeDepth,
       bevelEnabled: false,
     });
-    // Shape is centered at X=0, extruded along +Z from Z=0 to Z=extrudeDepth.
     _mat4.makeTranslation(cx, height, cz - extrudeDepth / 2);
     roofGeo.applyMatrix4(_mat4);
-    applyVertexColor(roofGeo, roofColor);
-    buckets.roofs.push(roofGeo);
+    applyWorldScaleUVs(roofGeo);
+    buckets.roofs[roofTile].push(roofGeo);
   } else {
     // Flat roof with parapet
     const slabGeo = new THREE.BoxGeometry(plot.width + 0.1, 0.15, plot.depth + 0.1);
-    buckets.roofs.push(positionGeo(slabGeo, cx, height + 0.075, cz, roofColor));
+    applyWorldScaleUVs(slabGeo);
+    buckets.roofs[roofTile].push(positionGeo(slabGeo, cx, height + 0.075, cz));
 
     const ph = 0.5;
     const pt = 0.2;
     // Front/back parapets
     for (const dz of [-plot.depth / 2, plot.depth / 2]) {
       const geo = new THREE.BoxGeometry(plot.width + 0.2, ph, pt);
-      buckets.roofs.push(positionGeo(geo, cx, height + ph / 2, cz + dz, roofColor));
+      applyWorldScaleUVs(geo);
+      buckets.roofs[roofTile].push(positionGeo(geo, cx, height + ph / 2, cz + dz));
     }
     // Side parapets
     for (const dx of [-plot.width / 2, plot.width / 2]) {
       const geo = new THREE.BoxGeometry(pt, ph, plot.depth + 0.2);
-      buckets.roofs.push(positionGeo(geo, cx + dx, height + ph / 2, cz, roofColor));
+      applyWorldScaleUVs(geo);
+      buckets.roofs[roofTile].push(positionGeo(geo, cx + dx, height + ph / 2, cz));
     }
   }
 }
