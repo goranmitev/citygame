@@ -171,8 +171,11 @@ export class CityBuilder implements GameSystem {
         ruv.setXY(i, ruv.getX(i) * street.width / UV_WORLD_SCALE, ruv.getY(i) * street.depth / UV_WORLD_SCALE);
       }
       ruv.needsUpdate = true;
+      // Horizontal roads sit slightly above vertical roads to avoid z-fighting at intersections
+      const isHorizontal = street.width > street.depth;
+      const y = isHorizontal ? 0.012 : 0.008;
       const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-      m.setPosition(street.x + street.width / 2, 0.01, street.z + street.depth / 2);
+      m.setPosition(street.x + street.width / 2, y, street.z + street.depth / 2);
       geo.applyMatrix4(m);
       roadGeos.push(geo);
     }
