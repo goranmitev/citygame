@@ -41,6 +41,9 @@ export class CityBuilder implements GameSystem {
     // --- Zebra crossings at intersections ---
     this.createZebraCrossings(scene);
 
+    // --- Dead-end walls at city edges ---
+    this.createDeadEndWalls(scene, colliders);
+
     // --- Buildings and parks ---
     const buckets = createBuckets();
     let plotSeed = this.seed * 1000;
@@ -143,8 +146,8 @@ export class CityBuilder implements GameSystem {
 
   private createGround(scene: THREE.Scene): void {
     const geo = new THREE.PlaneGeometry(
-      this.layout.totalWidth + 40,
-      this.layout.totalDepth + 40,
+      this.layout.totalWidth,
+      this.layout.totalDepth,
     );
     const texture = new THREE.TextureLoader().load('/textures/ground-atlas.webp');
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -264,6 +267,109 @@ export class CityBuilder implements GameSystem {
     for (let i = 0; i < stripeGeos.length; i++) {
       if (normalized[i] !== stripeGeos[i]) normalized[i].dispose();
       stripeGeos[i].dispose();
+    }
+  }
+
+  /** Place a continuous perimeter wall around the entire city. */
+  private createDeadEndWalls(
+    scene: THREE.Scene,
+    colliders: THREE.Box3[],
+  ): void {
+    const WALL_HEIGHT = 3.3;
+    const WALL_THICK = 1.5;
+    const geos: THREE.BufferGeometry[] = [];
+    const { totalWidth, totalDepth } = this.layout;
+
+    // Four walls: north (z=0), south (z=totalDepth), west (x=0), east (x=totalWidth)
+    const OVR = WALL_THICK;
+
+    const scaleUVs = (geo: THREE.BoxGeometry, w: number, h: number, d: number) => {
+      // Scale UVs to world size so the atlas fract() shader tiles properly.
+      // BoxGeometry faces: +x,-x,+y,-y,+z,-z (4 verts each)
+      const uv = geo.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) {
+        const face = Math.floor(i / 4);
+        let su: number, sv: number;
+        if (face <= 1) { su = d / UV_WORLD_SCALE; sv = h / UV_WORLD_SCALE; }       // +x, -x
+        else if (face <= 3) { su = w / UV_WORLD_SCALE; sv = d / UV_WORLD_SCALE; }   // +y, -y
+        else { su = w / UV_WORLD_SCALE; sv = h / UV_WORLD_SCALE; }                  // +z, -z
+        uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+      }
+      uv.needsUpdate = true;
+    };
+
+    // North wall (along X at z=0)
+    {
+      const w = totalWidth + 2 * OVR;
+      const geo = new THREE.BoxGeometry(w, WALL_HEIGHT, WALL_THICK);
+      scaleUVs(geo, w, WALL_HEIGHT, WALL_THICK);
+      geo.applyMatrix4(new THREE.Matrix4().makeTranslation(
+        totalWidth / 2, WALL_HEIGHT / 2, -WALL_THICK / 2,
+      ));
+      geos.push(geo);
+      colliders.push(new THREE.Box3(
+        new THREE.Vector3(-OVR, 0, -WALL_THICK),
+        new THREE.Vector3(totalWidth + OVR, WALL_HEIGHT, 0),
+      ));
+    }
+    // South wall (along X at z=totalDepth)
+    {
+      const w = totalWidth + 2 * OVR;
+      const geo = new THREE.BoxGeometry(w, WALL_HEIGHT, WALL_THICK);
+      scaleUVs(geo, w, WALL_HEIGHT, WALL_THICK);
+      geo.applyMatrix4(new THREE.Matrix4().makeTranslation(
+        totalWidth / 2, WALL_HEIGHT / 2, totalDepth + WALL_THICK / 2,
+      ));
+      geos.push(geo);
+      colliders.push(new THREE.Box3(
+        new THREE.Vector3(-OVR, 0, totalDepth),
+        new THREE.Vector3(totalWidth + OVR, WALL_HEIGHT, totalDepth + WALL_THICK),
+      ));
+    }
+    // West wall (along Z at x=0)
+    {
+      const d = totalDepth + 2 * OVR;
+      const geo = new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, d);
+      scaleUVs(geo, WALL_THICK, WALL_HEIGHT, d);
+      geo.applyMatrix4(new THREE.Matrix4().makeTranslation(
+        -WALL_THICK / 2, WALL_HEIGHT / 2, totalDepth / 2,
+      ));
+      geos.push(geo);
+      colliders.push(new THREE.Box3(
+        new THREE.Vector3(-WALL_THICK, 0, -OVR),
+        new THREE.Vector3(0, WALL_HEIGHT, totalDepth + OVR),
+      ));
+    }
+    // East wall (along Z at x=totalWidth)
+    {
+      const d = totalDepth + 2 * OVR;
+      const geo = new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, d);
+      scaleUVs(geo, WALL_THICK, WALL_HEIGHT, d);
+      geo.applyMatrix4(new THREE.Matrix4().makeTranslation(
+        totalWidth + WALL_THICK / 2, WALL_HEIGHT / 2, totalDepth / 2,
+      ));
+      geos.push(geo);
+      colliders.push(new THREE.Box3(
+        new THREE.Vector3(totalWidth, 0, -OVR),
+        new THREE.Vector3(totalWidth + WALL_THICK, WALL_HEIGHT, totalDepth + OVR),
+      ));
+    }
+
+    const normalized = geos.map(g => g.index ? g.toNonIndexed() : g);
+    const merged = mergeGeometries(normalized, false);
+    if (merged) {
+      const wallMap = new THREE.TextureLoader().load('/textures/walls-atlas.webp');
+      wallMap.wrapS = wallMap.wrapT = THREE.ClampToEdgeWrapping;
+      const mat = makeAtlasMaterial(wallMap, 0, 3, 0.9);
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      scene.add(mesh);
+    }
+    for (let i = 0; i < geos.length; i++) {
+      if (normalized[i] !== geos[i]) normalized[i].dispose();
+      geos[i].dispose();
     }
   }
 
