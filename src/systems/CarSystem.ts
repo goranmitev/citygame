@@ -71,6 +71,10 @@ export class CarSystem implements GameSystem {
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
 
+  // Initial spawn state for reset
+  private spawnPosition = new THREE.Vector3();
+  private spawnHeading = 0;
+
   // Sidewalk segments — used for Y adjustment when driving over curbs
   private sidewalks: StreetSegment[] = [];
 
@@ -143,6 +147,18 @@ export class CarSystem implements GameSystem {
   stop(): void {
     this.speed = 0;
     this.steer = 0;
+  }
+
+  setSpawn(x: number, y: number, z: number, heading: number): void {
+    this.spawnPosition.set(x, y, z);
+    this.spawnHeading = heading;
+  }
+
+  resetToSpawn(): void {
+    this.position.copy(this.spawnPosition);
+    this.heading = this.spawnHeading;
+    this.stop();
+    this.snapToSpawn();
   }
 
   /** Snap camera to spawn position (called after city sets position). */

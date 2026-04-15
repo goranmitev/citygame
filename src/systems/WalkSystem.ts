@@ -66,6 +66,10 @@ export class WalkSystem implements GameSystem {
   // Sidewalk segments — used for Y adjustment when walking over curbs
   private sidewalks: StreetSegment[] = [];
 
+  // Initial spawn state for reset
+  private spawnPosition = new THREE.Vector3();
+  private spawnHeading = 0;
+
   // City boundary limits (set by CityBuilder)
   private boundsMin = new THREE.Vector2(-Infinity, -Infinity);
   private boundsMax = new THREE.Vector2(Infinity, Infinity);
@@ -88,6 +92,22 @@ export class WalkSystem implements GameSystem {
   /** Required by CityBuilder — sets spawn position for the walking player. */
   snapToSpawn(): void {
     this.snapCamera();
+    this.updateCharacterMesh();
+  }
+
+  setSpawn(x: number, y: number, z: number, heading: number): void {
+    this.spawnPosition.set(x, y, z);
+    this.spawnHeading = heading;
+  }
+
+  resetToSpawn(): void {
+    this.position.copy(this.spawnPosition);
+    this.heading = this.spawnHeading;
+    this.isMoving = false;
+    if (this.runAction) {
+      this.runAction.stop();
+    }
+    this.snapToSpawn();
     this.updateCharacterMesh();
   }
 
@@ -134,6 +154,14 @@ export class WalkSystem implements GameSystem {
 
   update(delta: number): void {
     const { state } = this.input;
+
+    if (state.resetPressed) {
+      if (this.driving) {
+        this.car.resetToSpawn();
+      } else {
+        this.resetToSpawn();
+      }
+    }
 
     if (!state.pointerLocked) return;
 

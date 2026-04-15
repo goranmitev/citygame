@@ -111,15 +111,14 @@ export class CityBuilder implements GameSystem {
 
       if (car) {
         car.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
-        car.position.set(spawnX, 0, spawnZ);
-        car.heading = 0; // drive along Z (forward into the scene)
-        car.snapToSpawn();
+        car.setSpawn(spawnX, 0, spawnZ, 0);
+        car.resetToSpawn();
       }
 
       // Spawn player just outside the driver's door, clear of the car's collision box
       const ep = car ? car.entryPoint() : null;
-      player.position.set(ep ? ep.x : spawnX, 0, ep ? ep.z : spawnZ);
-      player.snapToSpawn();
+      player.setSpawn(ep ? ep.x : spawnX, 0, ep ? ep.z : spawnZ, 0);
+      player.resetToSpawn();
     }
   }
 

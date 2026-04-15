@@ -8,6 +8,7 @@ export interface InputState {
   sprint: boolean;
   interact: boolean;      // E key — held state
   interactPressed: boolean; // E key — single-frame pulse
+  resetPressed: boolean;  // R key — reset player/car to spawn
   mouseDX: number;
   mouseDY: number;
   pointerLocked: boolean;
@@ -27,6 +28,7 @@ export class InputSystem implements GameSystem {
     sprint: false,
     interact: false,
     interactPressed: false,
+    resetPressed: false,
     mouseDX: 0,
     mouseDY: 0,
     pointerLocked: false,
@@ -84,6 +86,7 @@ export class InputSystem implements GameSystem {
     this.state.mouseDX = 0;
     this.state.mouseDY = 0;
     this.state.interactPressed = false;
+    this.state.resetPressed = false;
   }
 
   dispose(): void {
@@ -135,6 +138,9 @@ export class InputSystem implements GameSystem {
       case 'KeyE':
         this.state.interact = down;
         if (down) this.state.interactPressed = true;
+        break;
+      case 'KeyR':
+        if (down) this.state.resetPressed = true;
         break;
     }
   }
