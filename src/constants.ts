@@ -27,6 +27,7 @@ export const CAR_BRAKE_FORCE = 20;     // m/s² while braking
 export const CAR_DRAG = 10;            // passive deceleration when no input
 export const CAR_STEER_SPEED = 3.2;    // rad/s max turn rate at low speed
 export const CAR_SPEED_STEER_FACTOR = 0.03; // reduces steering at high speed
+export const CAR_MIN_TURN_SPEED = 0.3;  // m/s below which car cannot turn (no spinning in place)
 
 // --- Car camera ---
 export const CAR_CAM_DIST = 9;

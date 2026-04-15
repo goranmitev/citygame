@@ -5,7 +5,6 @@
 - [ ] ~~Add SSAO (ambient occlusion)~~ (removed — too expensive)
 - [ ] Warm golden-hour lighting
 - [ ] Add street details (streetlights, benches, trees)
-- [ ] Better ground/road textures
 - [ ] More building variety (awnings, balconies, colors)
 - [ ] Gradient sky / skybox
 - [ ] Day/night cycle
