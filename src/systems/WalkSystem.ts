@@ -11,6 +11,10 @@ import {
   WALK_MOUSE_SENSITIVITY, WALK_PITCH_MIN, WALK_PITCH_MAX,
   CAR_ENTER_RADIUS,
 } from '../constants';
+import type { StreetSegment } from '../city/CityLayout';
+
+const SIDEWALK_HEIGHT = 0.15;
+const SIDEWALK_Y_LERP = 12;
 
 export interface InteractZone {
   id: string;
@@ -58,6 +62,9 @@ export class WalkSystem implements GameSystem {
 
   // Colliders (buildings only — car collision is checked via car.getWorldBox())
   private colliders: THREE.Box3[] = [];
+
+  // Sidewalk segments — used for Y adjustment when walking over curbs
+  private sidewalks: StreetSegment[] = [];
 
   // City boundary limits (set by CityBuilder)
   private boundsMin = new THREE.Vector2(-Infinity, -Infinity);
@@ -107,6 +114,22 @@ export class WalkSystem implements GameSystem {
   setCityBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
     this.boundsMin.set(minX, minZ);
     this.boundsMax.set(maxX, maxZ);
+  }
+
+  /** Register sidewalk segments for Y-height adjustment. */
+  setSidewalks(segments: StreetSegment[]): void {
+    this.sidewalks = segments;
+    this.car.setSidewalks(segments);
+  }
+
+  /** Check if position overlaps any sidewalk and return target Y. */
+  private getSidewalkY(px: number, pz: number): number {
+    for (const sw of this.sidewalks) {
+      if (px >= sw.x && px <= sw.x + sw.width && pz >= sw.z && pz <= sw.z + sw.depth) {
+        return SIDEWALK_HEIGHT;
+      }
+    }
+    return 0;
   }
 
   update(delta: number): void {
@@ -241,6 +264,11 @@ export class WalkSystem implements GameSystem {
     }
 
     if (this.mixer) this.mixer.update(delta);
+
+    // Smoothly adjust Y to match sidewalk height
+    const targetY = this.getSidewalkY(this.position.x, this.position.z);
+    this.position.y += (targetY - this.position.y) * Math.min(1, SIDEWALK_Y_LERP * delta);
+
     this.updateCharacterMesh();
   }
 

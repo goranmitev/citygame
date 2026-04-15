@@ -11,6 +11,10 @@ import {
   CAR_CAM_DIST, CAR_CAM_HEIGHT, CAR_CAM_LERP,
   CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
 } from '../constants';
+import type { StreetSegment } from '../city/CityLayout';
+
+const SIDEWALK_HEIGHT = 0.15;
+const SIDEWALK_Y_LERP = 10;
 
 const _camHit = new THREE.Vector3();
 
@@ -54,6 +58,9 @@ export class CarSystem implements GameSystem {
 
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
+
+  // Sidewalk segments — used for Y adjustment when driving over curbs
+  private sidewalks: StreetSegment[] = [];
 
   // City boundary limits (set by CityBuilder)
   private boundsMin = new THREE.Vector2(-Infinity, -Infinity);
@@ -140,6 +147,21 @@ export class CarSystem implements GameSystem {
     this.colliders.length = 0;
   }
 
+  /** Register sidewalk segments for Y-height adjustment. */
+  setSidewalks(segments: StreetSegment[]): void {
+    this.sidewalks = segments;
+  }
+
+  /** Check if position overlaps any sidewalk and return target Y. */
+  private getSidewalkY(px: number, pz: number): number {
+    for (const sw of this.sidewalks) {
+      if (px >= sw.x && px <= sw.x + sw.width && pz >= sw.z && pz <= sw.z + sw.depth) {
+        return SIDEWALK_HEIGHT;
+      }
+    }
+    return 0;
+  }
+
   /** Set hard limits the car cannot cross (called by CityBuilder). */
   setCityBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
     this.boundsMin.set(minX, minZ);
@@ -152,6 +174,11 @@ export class CarSystem implements GameSystem {
       this.updateCamera(delta);
       this.sceneSystem.updateShadowTarget(this.position.x, this.position.z);
     }
+
+    // Smoothly adjust Y to match sidewalk height
+    const targetY = this.getSidewalkY(this.position.x, this.position.z);
+    this.position.y += (targetY - this.position.y) * Math.min(1, SIDEWALK_Y_LERP * delta);
+
     this._wheelAngle += (this.speed / 0.35) * delta;
     this.updateCarMesh();
   }

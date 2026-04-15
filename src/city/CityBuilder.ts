@@ -98,6 +98,7 @@ export class CityBuilder implements GameSystem {
 
     if (player) {
       player.addColliders(colliders);
+      player.setSidewalks(this.layout.sidewalks);
       player.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
       // Spawn in the center of the first horizontal street (width > depth = runs along X)
       const firstHStreet = this.layout.streets.find((s) => s.width > s.depth);
