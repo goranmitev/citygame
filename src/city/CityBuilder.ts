@@ -42,7 +42,7 @@ export class CityBuilder implements GameSystem {
     this.createZebraCrossings(scene);
 
     // --- Dead-end walls at city edges ---
-    this.createDeadEndWalls(scene, colliders);
+    this.createDeadEndWalls(scene);
 
     // --- Buildings and parks ---
     const buckets = createBuckets();
@@ -275,10 +275,7 @@ export class CityBuilder implements GameSystem {
   }
 
   /** Place a continuous perimeter wall around the entire city. */
-  private createDeadEndWalls(
-    scene: THREE.Scene,
-    colliders: THREE.Box3[],
-  ): void {
+  private createDeadEndWalls(scene: THREE.Scene): void {
     const WALL_HEIGHT = 3.3;
     const WALL_THICK = 1.5;
     const geos: THREE.BufferGeometry[] = [];
@@ -311,10 +308,6 @@ export class CityBuilder implements GameSystem {
         totalWidth / 2, WALL_HEIGHT / 2, -WALL_THICK / 2,
       ));
       geos.push(geo);
-      colliders.push(new THREE.Box3(
-        new THREE.Vector3(-OVR, 0, -WALL_THICK),
-        new THREE.Vector3(totalWidth + OVR, WALL_HEIGHT, 0),
-      ));
     }
     // South wall (along X at z=totalDepth)
     {
@@ -325,10 +318,6 @@ export class CityBuilder implements GameSystem {
         totalWidth / 2, WALL_HEIGHT / 2, totalDepth + WALL_THICK / 2,
       ));
       geos.push(geo);
-      colliders.push(new THREE.Box3(
-        new THREE.Vector3(-OVR, 0, totalDepth),
-        new THREE.Vector3(totalWidth + OVR, WALL_HEIGHT, totalDepth + WALL_THICK),
-      ));
     }
     // West wall (along Z at x=0)
     {
@@ -339,10 +328,6 @@ export class CityBuilder implements GameSystem {
         -WALL_THICK / 2, WALL_HEIGHT / 2, totalDepth / 2,
       ));
       geos.push(geo);
-      colliders.push(new THREE.Box3(
-        new THREE.Vector3(-WALL_THICK, 0, -OVR),
-        new THREE.Vector3(0, WALL_HEIGHT, totalDepth + OVR),
-      ));
     }
     // East wall (along Z at x=totalWidth)
     {
@@ -353,10 +338,6 @@ export class CityBuilder implements GameSystem {
         totalWidth + WALL_THICK / 2, WALL_HEIGHT / 2, totalDepth / 2,
       ));
       geos.push(geo);
-      colliders.push(new THREE.Box3(
-        new THREE.Vector3(totalWidth, 0, -OVR),
-        new THREE.Vector3(totalWidth + WALL_THICK, WALL_HEIGHT, totalDepth + OVR),
-      ));
     }
 
     const normalized = geos.map(g => g.index ? g.toNonIndexed() : g);

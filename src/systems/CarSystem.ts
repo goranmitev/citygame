@@ -9,7 +9,7 @@ import {
   CAR_MAX_SPEED_FWD, CAR_MAX_SPEED_REV,
   CAR_ACCEL, CAR_BRAKE_FORCE, CAR_DRAG,
   CAR_STEER_SPEED, CAR_SPEED_STEER_FACTOR,
-  CAR_MIN_TURN_SPEED,
+  CAR_MIN_TURN_SPEED, CAR_FULL_TURN_SPEED,
   CAR_CAM_DIST, CAR_CAM_HEIGHT, CAR_CAM_LERP,
   CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
   CAR_MODEL_SCALE, CAR_GROUND_CLEARANCE,
@@ -264,9 +264,11 @@ export class CarSystem implements GameSystem {
     // Improved handling: only turn/rotate when moving (prevents spinning in place)
     let turnDelta = 0;
     if (Math.abs(this.speed) >= CAR_MIN_TURN_SPEED) {
-      const speedFactor = Math.abs(this.speed) / (CAR_MAX_SPEED_FWD * 0.5);
+      const spd = Math.abs(this.speed);
+      const speedFactor = spd / (CAR_MAX_SPEED_FWD * 0.5);
       const steerRate = CAR_STEER_SPEED / (1 + speedFactor * CAR_SPEED_STEER_FACTOR * 60);
-      turnDelta = this.steer * steerRate * delta * Math.sign(this.speed);
+      const lowSpeedRamp = Math.min(1, spd / CAR_FULL_TURN_SPEED);
+      turnDelta = this.steer * steerRate * lowSpeedRamp * delta * Math.sign(this.speed);
     }
     this.heading -= turnDelta;
 

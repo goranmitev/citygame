@@ -28,6 +28,7 @@ export const CAR_DRAG = 10;            // passive deceleration when no input
 export const CAR_STEER_SPEED = 3.2;    // rad/s max turn rate at low speed
 export const CAR_SPEED_STEER_FACTOR = 0.03; // reduces steering at high speed
 export const CAR_MIN_TURN_SPEED = 0.3;  // m/s below which car cannot turn (no spinning in place)
+export const CAR_FULL_TURN_SPEED = 6;   // m/s at which full turn rate is reached (ramps up from min)
 
 // --- Car visuals (Meshy GLB) ---
 export const CAR_MODEL_SCALE = 2.4;
