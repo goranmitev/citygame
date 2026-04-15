@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -11,6 +12,8 @@ import {
   CAR_MIN_TURN_SPEED,
   CAR_CAM_DIST, CAR_CAM_HEIGHT, CAR_CAM_LERP,
   CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
+  CAR_MODEL_SCALE, CAR_GROUND_CLEARANCE,
+  CAR_BODY_ROUGHNESS, CAR_BODY_METALNESS, CAR_ENV_INTENSITY,
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
 
@@ -39,6 +42,14 @@ export class CarSystem implements GameSystem {
   private carGroup!: THREE.Group;
   private wheelPivots: THREE.Group[] = [];
   private _wheelAngle = 0;
+  private gltfLoader!: GLTFLoader;
+  private modelLoaded = false;
+  private suspensionOffset = 0;
+  private carYOffset = 0; // computed from bounding box to prevent floating/sinking
+
+  // Collision half-extents — set from actual GLB bounding box after load
+  private halfW = CAR_HALF_W;
+  private halfL = CAR_HALF_L;
 
   // Physics state
   private speed = 0;
@@ -72,7 +83,8 @@ export class CarSystem implements GameSystem {
     this.input = game.getSystem<InputSystem>('input')!;
     this.sceneSystem = game.getSystem<SceneSystem>('scene')!;
     this.scene = game.scene;
-    this.buildCarMesh();
+    this.gltfLoader = new GLTFLoader();
+    this.loadCarModel();  // async load Meshy model (falls back to procedural if fails)
 
     // React to enter/exit events emitted by WalkSystem
     EventBus.on(Events.CAR_ENTERED, this.onEntered);
@@ -89,9 +101,9 @@ export class CarSystem implements GameSystem {
     const sinH = Math.sin(this.heading);
     const cosH = Math.cos(this.heading);
     return new THREE.Vector3(
-      this.position.x - cosH * 1.8,
+      this.position.x - cosH * 4.5, // scaled for larger car to avoid trapping
       0,
-      this.position.z + sinH * 1.8,
+      this.position.z + sinH * 4.5,
     );
   }
 
@@ -110,10 +122,10 @@ export class CarSystem implements GameSystem {
     const sinH = Math.sin(this.heading);
     const cosH = Math.cos(this.heading);
     const corners = [
-      [ CAR_HALF_W,  CAR_HALF_L],
-      [-CAR_HALF_W,  CAR_HALF_L],
-      [ CAR_HALF_W, -CAR_HALF_L],
-      [-CAR_HALF_W, -CAR_HALF_L],
+      [ this.halfW,  this.halfL],
+      [-this.halfW,  this.halfL],
+      [ this.halfW, -this.halfL],
+      [-this.halfW, -this.halfL],
     ].map(([lx, lz]) => ({
       x: this.position.x + lx * cosH - lz * sinH,
       z: this.position.z + lx * sinH + lz * cosH,
@@ -181,6 +193,10 @@ export class CarSystem implements GameSystem {
     this.position.y += (targetY - this.position.y) * Math.min(1, SIDEWALK_Y_LERP * delta);
 
     this._wheelAngle += (this.speed / 0.35) * delta;
+
+    // Simple suspension bob (works for both procedural and Meshy model)
+    this.suspensionOffset = Math.sin(this._wheelAngle * 1.5) * 0.025 * Math.min(1.0, Math.abs(this.speed) / 8);
+
     this.updateCarMesh();
   }
 
@@ -283,8 +299,14 @@ export class CarSystem implements GameSystem {
     const nx = this.position.x + dx;
     const nz = this.position.z + dz;
 
-    this._tryBox.min.set(nx - CAR_HALF_W, 0,          nz - CAR_HALF_L);
-    this._tryBox.max.set(nx + CAR_HALF_W, CAR_HEIGHT, nz + CAR_HALF_L);
+    // Axis-aligned bounding box of the rotated car footprint
+    const sinH = Math.abs(Math.sin(this.heading));
+    const cosH = Math.abs(Math.cos(this.heading));
+    const hwX = cosH * this.halfW + sinH * this.halfL;
+    const hwZ = sinH * this.halfW + cosH * this.halfL;
+
+    this._tryBox.min.set(nx - hwX, 0,          nz - hwZ);
+    this._tryBox.max.set(nx + hwX, CAR_HEIGHT, nz + hwZ);
 
     for (const box of this.colliders) {
       if (this._tryBox.intersectsBox(box)) {
@@ -292,9 +314,9 @@ export class CarSystem implements GameSystem {
       }
     }
 
-    // Clamp to city bounds
-    const clampedX = Math.max(this.boundsMin.x + CAR_HALF_W, Math.min(this.boundsMax.x - CAR_HALF_W, nx));
-    const clampedZ = Math.max(this.boundsMin.y + CAR_HALF_L, Math.min(this.boundsMax.y - CAR_HALF_L, nz));
+    // Clamp to city bounds using heading-aware extents
+    const clampedX = Math.max(this.boundsMin.x + hwX, Math.min(this.boundsMax.x - hwX, nx));
+    const clampedZ = Math.max(this.boundsMin.y + hwZ, Math.min(this.boundsMax.y - hwZ, nz));
     if (clampedX !== nx || clampedZ !== nz) {
       this.position.x = clampedX;
       this.position.z = clampedZ;
@@ -306,9 +328,16 @@ export class CarSystem implements GameSystem {
   }
 
   private updateCarMesh(): void {
-    this.carGroup.position.set(this.position.x, this.position.y, this.position.z);
+    if (!this.carGroup) return;
+
+    const bodyY = this.position.y + this.suspensionOffset * 0.6 + this.carYOffset;
+    this.carGroup.position.set(this.position.x, bodyY, this.position.z);
     this.carGroup.rotation.y = this.heading;
+
+    // Rotate wheels (works for both Meshy-derived pivots and procedural)
     for (const pivot of this.wheelPivots) {
+      const wheelY = 0.35 + this.suspensionOffset * 0.8;
+      pivot.position.y = wheelY;
       pivot.rotation.x = this._wheelAngle;
     }
   }
@@ -387,8 +416,78 @@ export class CarSystem implements GameSystem {
   }
 
   // ---------------------------------------------------------------------------
-  // Car mesh construction
+  // Car mesh construction (Meshy GLB preferred)
   // ---------------------------------------------------------------------------
+
+  private async loadCarModel(): Promise<void> {
+    try {
+      console.log('Loading Meshy-generated car model...');
+      const gltf = await new Promise<any>((resolve, reject) => {
+        this.gltfLoader.load(
+          '/assets/models/car.glb',
+          resolve,
+          (progress) => console.log('Load progress:', (progress.loaded / progress.total * 100).toFixed(1) + '%'),
+          reject
+        );
+      });
+
+      // Wrap the model so carGroup owns heading (Y) and the model keeps its fixed orientation
+      const model = gltf.scene;
+      model.scale.setScalar(CAR_MODEL_SCALE);
+      model.rotation.y = Math.PI / 2; // GLB natural front is -X; rotate to face +Z (physics forward)
+
+      this.carGroup = new THREE.Group();
+      this.carGroup.add(model);
+
+      // Enable shadows on all meshes + refined materials (less shiny, brighter per request)
+      this.carGroup.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          // Ensure PBR materials from Meshy are configured for scene lighting
+          if (child.material) {
+            const mat = child.material as THREE.MeshStandardMaterial;
+            if (mat.map) mat.map.needsUpdate = true;
+            mat.roughness = CAR_BODY_ROUGHNESS;
+            mat.metalness = CAR_BODY_METALNESS;
+            mat.envMapIntensity = CAR_ENV_INTENSITY;
+            mat.emissive = new THREE.Color(0x111111); // subtle brightness boost
+            mat.emissiveIntensity = 0.3;
+          }
+        }
+      });
+
+      // Calculate exact Y offset and collision extents from actual model bounding box
+      const box = new THREE.Box3().setFromObject(this.carGroup);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      this.carYOffset = -box.min.y + CAR_GROUND_CLEARANCE;
+      this.halfW = size.x / 2;
+      this.halfL = size.z / 2;
+      console.log(`Car bbox: ${size.x.toFixed(2)}w × ${size.z.toFixed(2)}l × ${size.y.toFixed(2)}h (halfW=${this.halfW.toFixed(2)}, halfL=${this.halfL.toFixed(2)}`);
+
+      // Find wheel meshes if present in Meshy model (single-mesh car has integrated tires; no geometric fallback)
+      this.wheelPivots = [];
+      this.carGroup.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh && 
+            (child.name.toLowerCase().includes('wheel') || 
+             child.name.toLowerCase().includes('tire') || 
+             child.name.toLowerCase().includes('rim'))) {
+          const pivot = new THREE.Group();
+          pivot.add(child);
+          this.carGroup.add(pivot);
+          this.wheelPivots.push(pivot);
+        }
+      });
+
+      this.scene.add(this.carGroup);
+      this.modelLoaded = true;
+      console.log(`✅ Meshy car model loaded successfully (${this.wheelPivots.length} wheels detected, geometric tires removed)`);
+    } catch (error) {
+      console.error('Failed to load Meshy car model, falling back to procedural:', error);
+      this.buildCarMesh();
+    }
+  }
 
   private buildCarMesh(): void {
     this.carGroup = new THREE.Group();

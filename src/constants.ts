@@ -16,10 +16,10 @@ export const SIDEWALK_COLOR = 0x999990;
 export const GROUND_COLOR = 0x4a5a3a;
 export const MARKING_COLOR = 0xccccaa;
 
-// --- Car physics ---
-export const CAR_HALF_W = 1.0;         // half-width for collision
-export const CAR_HALF_L = 2.2;         // half-length for collision
-export const CAR_HEIGHT = 0.8;         // collision box height
+// --- Car physics (scaled for Meshy model; 20% smaller visual per request) ---
+export const CAR_HALF_W = 4.0;         // half-width for collision
+export const CAR_HALF_L = 8.8;         // half-length for collision
+export const CAR_HEIGHT = 3.2;         // collision box height
 export const CAR_MAX_SPEED_FWD = 22;   // m/s (~80 km/h)
 export const CAR_MAX_SPEED_REV = 6;
 export const CAR_ACCEL = 14;           // m/s² while throttle pressed
@@ -28,6 +28,13 @@ export const CAR_DRAG = 10;            // passive deceleration when no input
 export const CAR_STEER_SPEED = 3.2;    // rad/s max turn rate at low speed
 export const CAR_SPEED_STEER_FACTOR = 0.03; // reduces steering at high speed
 export const CAR_MIN_TURN_SPEED = 0.3;  // m/s below which car cannot turn (no spinning in place)
+
+// --- Car visuals (Meshy GLB) ---
+export const CAR_MODEL_SCALE = 2.4;
+export const CAR_GROUND_CLEARANCE = 0; // tuned lower for flush ground contact
+export const CAR_BODY_ROUGHNESS = 0.65; // less shiny
+export const CAR_BODY_METALNESS = 0.55;
+export const CAR_ENV_INTENSITY = 1.2; // brighter
 
 // --- Car camera ---
 export const CAR_CAM_DIST = 9;
@@ -52,7 +59,7 @@ export const WALK_PITCH_MIN = -0.4;
 export const WALK_PITCH_MAX = 0.8;
 
 // --- Enter/exit car ---
-export const CAR_ENTER_RADIUS = 3.5;   // max distance to trigger entry
+export const CAR_ENTER_RADIUS = 8.0;   // increased for larger car (prevents trapping)
 
 // --- Minimap ---
 export const MAP_SIZE = 180;

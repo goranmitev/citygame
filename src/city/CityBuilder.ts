@@ -103,18 +103,22 @@ export class CityBuilder implements GameSystem {
       player.addColliders(colliders);
       player.setSidewalks(this.layout.sidewalks);
       player.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
-      // Spawn in the center of the first horizontal street (width > depth = runs along X)
-      const firstHStreet = this.layout.streets.find((s) => s.width > s.depth);
-      const spawnX = firstHStreet ? firstHStreet.x + firstHStreet.width / 2 : this.layout.totalWidth / 2;
-      const spawnZ = firstHStreet ? firstHStreet.z + firstHStreet.depth / 2 : this.layout.totalDepth / 2;
+      // Spawn in the center of the first vertical street (depth > width = runs along Z)
+      // heading=0 drives in +Z which feels like "forward" from the player's camera perspective
+      const firstVStreet = this.layout.streets.find((s) => s.depth > s.width);
+      const spawnX = firstVStreet ? firstVStreet.x + firstVStreet.width / 2 : this.layout.totalWidth / 2;
+      const spawnZ = firstVStreet ? firstVStreet.z + firstVStreet.depth / 2 : this.layout.totalDepth / 2;
 
       if (car) {
         car.setCityBounds(0, this.layout.totalWidth, 0, this.layout.totalDepth);
-        car.position.set(spawnX + 4, 0, spawnZ);
+        car.position.set(spawnX, 0, spawnZ);
+        car.heading = 0; // drive along Z (forward into the scene)
         car.snapToSpawn();
       }
 
-      player.position.set(spawnX, 0, spawnZ);
+      // Spawn player just outside the driver's door, clear of the car's collision box
+      const ep = car ? car.entryPoint() : null;
+      player.position.set(ep ? ep.x : spawnX, 0, ep ? ep.z : spawnZ);
       player.snapToSpawn();
     }
   }
