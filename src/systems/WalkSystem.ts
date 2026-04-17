@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events, CarEnteredEvent, CarExitedEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -403,8 +404,11 @@ export class WalkSystem implements GameSystem {
     this.characterGroup = new THREE.Group();
     this.scene.add(this.characterGroup);
 
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('/draco/');
     const loader = new GLTFLoader();
-    loader.load('delivery_guy_running.glb', (gltf) => {
+    loader.setDRACOLoader(dracoLoader);
+    loader.load('delivery_guy_running_optimized.glb', (gltf) => {
       const model = gltf.scene;
 
       // Scale model to match PLAYER_HEIGHT

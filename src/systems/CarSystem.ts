@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -87,7 +88,10 @@ export class CarSystem implements GameSystem {
     this.input = game.getSystem<InputSystem>('input')!;
     this.sceneSystem = game.getSystem<SceneSystem>('scene')!;
     this.scene = game.scene;
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('/draco/');
     this.gltfLoader = new GLTFLoader();
+    this.gltfLoader.setDRACOLoader(dracoLoader);
     this.loadCarModel();  // async load Meshy model (falls back to procedural if fails)
 
     // React to enter/exit events emitted by WalkSystem
@@ -442,7 +446,7 @@ export class CarSystem implements GameSystem {
       console.log('Loading Meshy-generated car model...');
       const gltf = await new Promise<any>((resolve, reject) => {
         this.gltfLoader.load(
-          '/assets/models/car.glb',
+          '/assets/models/car_optimized.glb',
           resolve,
           (progress) => console.log('Load progress:', (progress.loaded / progress.total * 100).toFixed(1) + '%'),
           reject
