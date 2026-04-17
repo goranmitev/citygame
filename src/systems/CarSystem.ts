@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Game, GameSystem } from '../core/Game';
-import { EventBus, Events } from '../core/EventBus';
+import { EventBus, Events, CarHitEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
 import { SceneSystem } from './SceneSystem';
 import {
@@ -75,6 +75,8 @@ export class CarSystem implements GameSystem {
   // Initial spawn state for reset
   private spawnPosition = new THREE.Vector3();
   private spawnHeading = 0;
+
+  private wallHitCooldown = 0;
 
   // Sidewalk segments — used for Y adjustment when driving over curbs
   private sidewalks: StreetSegment[] = [];
@@ -202,6 +204,7 @@ export class CarSystem implements GameSystem {
   }
 
   update(delta: number): void {
+    this.wallHitCooldown = Math.max(0, this.wallHitCooldown - delta);
     if (this.isOccupied) {
       this.updatePhysics(delta);
       this.updateCamera(delta);
@@ -299,6 +302,13 @@ export class CarSystem implements GameSystem {
 
     const blockedX = !this.tryMove(dx, 0);
     const blockedZ = !this.tryMove(0, dz);
+
+    if (blockedX || blockedZ) {
+      if (this.wallHitCooldown === 0) {
+        EventBus.emit<CarHitEvent>(Events.CAR_HIT_WALL, { speed: Math.abs(this.speed) });
+        this.wallHitCooldown = 0.4;
+      }
+    }
 
     if (blockedX && blockedZ) {
       // Head-on hit — bounce back hard

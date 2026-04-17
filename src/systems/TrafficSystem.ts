@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Game, GameSystem } from '../core/Game';
 import { CityBuilder } from '../city/CityBuilder';
 import { CarSystem } from './CarSystem';
+import { EventBus, Events, CarHitEvent } from '../core/EventBus';
 
 // Traffic light phase durations (seconds)
 const GREEN_DURATION = 8;
@@ -189,6 +190,7 @@ export class TrafficSystem implements GameSystem {
         if (carBox.intersectsBox(this._knockBox)) {
           obj.state = 'flying';
           const speed = carVel.length();
+          EventBus.emit<CarHitEvent>(Events.CAR_HIT_OBJECT, { speed });
           obj.vel.set(
             carVel.x * 0.6 + (Math.random() - 0.5) * 2,
             speed * 0.5 + 3,

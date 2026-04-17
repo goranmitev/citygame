@@ -40,6 +40,9 @@ export class WalkSystem implements GameSystem {
   // Read by minimap to draw heading arrow
   heading = 0;
 
+  get isDriving(): boolean { return this.driving; }
+  get isWalking(): boolean { return this.isMoving && !this.driving; }
+
   private driving = false;
   private interactZones = new Map<string, InteractZone>();
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Game, GameSystem } from '../core/Game';
 import { StreetSegment } from '../city/CityLayout';
 import { CarSystem } from './CarSystem';
+import { EventBus, Events, CarHitEvent } from '../core/EventBus';
 
 type PedState = 'walking' | 'flying' | 'fading' | 'done';
 
@@ -164,6 +165,7 @@ export class PedestrianSystem implements GameSystem {
 
   private knockPedestrian(p: Pedestrian, carVel: THREE.Vector3): void {
     p.state = 'flying';
+    EventBus.emit<CarHitEvent>(Events.CAR_HIT_PED, { speed: carVel.length() });
 
     // Clone pooled materials so we can set them transparent independently
     p.group.traverse((obj) => {
