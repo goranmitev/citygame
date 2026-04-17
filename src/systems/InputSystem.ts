@@ -59,7 +59,7 @@ export class InputSystem implements GameSystem {
     window.addEventListener('keyup', this.onKeyUp);
 
     // Mouse
-    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    document.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
 
     // Click to lock pointer (desktop) or dismiss overlay (mobile)
@@ -92,7 +92,7 @@ export class InputSystem implements GameSystem {
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
-    this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    document.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.canvas.removeEventListener('touchstart', this.onTouchStart);
     this.canvas.removeEventListener('touchmove', this.onTouchMove);
@@ -154,7 +154,7 @@ export class InputSystem implements GameSystem {
   };
 
   private onPointerLockChange = (): void => {
-    this.state.pointerLocked = document.pointerLockElement === this.canvas;
+    this.state.pointerLocked = document.pointerLockElement != null;
     if (this.state.pointerLocked) {
       this.overlay.classList.add('hidden');
     } else {

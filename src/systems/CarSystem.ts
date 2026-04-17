@@ -17,6 +17,7 @@ import {
   CAR_BODY_ROUGHNESS, CAR_BODY_METALNESS, CAR_ENV_INTENSITY,
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
+import { playerOptions } from '../playerOptions';
 
 const SIDEWALK_HEIGHT = 0.15;
 const SIDEWALK_Y_LERP = 10;
@@ -100,6 +101,9 @@ export class CarSystem implements GameSystem {
     EventBus.on(Events.CAR_ENTERED, this.onEntered);
     EventBus.on(Events.CAR_EXITED, this.onExited);
   }
+
+  get currentSpeed(): number { return this.speed; }
+  get currentSteer(): number { return this.steer; }
 
   /** Speed in km/h (always positive). */
   getSpeedKmh(): number {
@@ -483,8 +487,9 @@ export class CarSystem implements GameSystem {
             mat.roughness = CAR_BODY_ROUGHNESS;
             mat.metalness = CAR_BODY_METALNESS;
             mat.envMapIntensity = CAR_ENV_INTENSITY;
-            mat.emissive = new THREE.Color(0x111111); // subtle brightness boost
+            mat.emissive = new THREE.Color(0x111111);
             mat.emissiveIntensity = 0.3;
+            mat.color = new THREE.Color(playerOptions.carColor);
           }
         }
       });
@@ -524,14 +529,14 @@ export class CarSystem implements GameSystem {
   private buildCarMesh(): void {
     this.carGroup = new THREE.Group();
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.4, metalness: 0.5 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: playerOptions.carColor, roughness: 0.4, metalness: 0.5 });
     const bodyGeo = new THREE.BoxGeometry(1.8, 0.55, 4.0);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.set(0, 0.45, 0);
     body.castShadow = true;
     this.carGroup.add(body);
 
-    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x991818, roughness: 0.5, metalness: 0.3 });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: playerOptions.carColor, roughness: 0.5, metalness: 0.3 });
     const cabinGeo = new THREE.BoxGeometry(1.5, 0.55, 2.2);
     const cabin = new THREE.Mesh(cabinGeo, cabinMat);
     cabin.position.set(0, 0.95, -0.1);

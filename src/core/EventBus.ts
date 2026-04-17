@@ -53,6 +53,18 @@ export const Events = {
   ORDER_PICKED_UP:  'delivery:picked_up',   // payload: OrderPickedUpEvent
   ORDER_DELIVERED:  'delivery:delivered',   // payload: OrderDeliveredEvent
   ORDER_FAILED:     'delivery:failed',      // payload: none
+
+  // Network — server-to-client events
+  NET_WELCOME:          'net:welcome',           // payload: NetWelcomeEvent
+  NET_PLAYER_JOINED:    'net:player_joined',     // payload: NetPlayerJoinedEvent
+  NET_PLAYER_LEFT:      'net:player_left',       // payload: NetPlayerLeftEvent
+  NET_PLAYER_POS:       'net:player_pos',        // payload: NetPlayerPosEvent
+  NET_ORDER_SPAWNED:    'net:order_spawned',     // payload: NetOrderSpawnedEvent
+  NET_PICKUP_CONFIRMED: 'net:pickup_confirmed',  // payload: NetPickupConfirmedEvent
+  NET_PICKUP_DENIED:    'net:pickup_denied',     // payload: NetPickupDeniedEvent
+  NET_PICKUP_LOCKED:    'net:pickup_locked',     // payload: NetPickupLockedEvent
+  NET_DELIVERED:        'net:delivered',         // payload: NetDeliveredEvent
+  NET_FAILED:           'net:failed',            // payload: NetFailedEvent
 } as const;
 
 export interface CarEnteredEvent {
@@ -86,4 +98,53 @@ export interface CarHitEvent {
 export interface OrderDeliveredEvent {
   pay: number;
   tipPercent: number;
+}
+
+// ── Network event payloads ──────────────────────────────────────────────────
+
+export interface ScoreEntry { color: string; balance: number; failures: number; nickname: string; }
+
+export interface NetWelcomeEvent {
+  playerId: string;
+  color: string;
+  playerIndex: number;
+  gameState: {
+    players: Array<{ id: string; color: string; x: number; y: number; z: number; heading: number; speed: number; steer: number; isInCar: boolean }>;
+    restaurants: Array<{ hasOrder: boolean; orderValue: number; lockedBy: string | null }>;
+    scores: Record<string, ScoreEntry>;
+  };
+}
+
+export interface NetPlayerJoinedEvent { playerId: string; color: string; }
+export interface NetPlayerLeftEvent   { playerId: string; }
+
+export interface NetPlayerPosEvent {
+  playerId: string;
+  x: number; y: number; z: number;
+  heading: number; speed: number; steer: number;
+  isInCar: boolean;
+}
+
+export interface NetOrderSpawnedEvent  { restaurantIndex: number; orderValue: number; }
+export interface NetPickupDeniedEvent  { restaurantIndex: number; }
+export interface NetPickupLockedEvent  { playerId: string; restaurantIndex: number; }
+
+export interface NetPickupConfirmedEvent {
+  restaurantIndex: number;
+  orderValue: number;
+  timeLimit: number;
+  destCx: number;
+  destCz: number;
+}
+
+export interface NetDeliveredEvent {
+  playerId: string;
+  pay: number;
+  scores: Record<string, ScoreEntry>;
+}
+
+export interface NetFailedEvent {
+  playerId: string;
+  failures: number;
+  scores: Record<string, ScoreEntry>;
 }

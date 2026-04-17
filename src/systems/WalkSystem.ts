@@ -13,6 +13,7 @@ import {
   CAR_ENTER_RADIUS,
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
+import { playerOptions } from '../playerOptions';
 
 const SIDEWALK_HEIGHT = 0.15;
 const SIDEWALK_Y_LERP = 12;
@@ -432,6 +433,7 @@ export class WalkSystem implements GameSystem {
             mat.transparent = false;
             mat.depthWrite = true;
             mat.alphaTest = 0;
+            mat.color = new THREE.Color(playerOptions.shirtColor);
           }
         }
       });

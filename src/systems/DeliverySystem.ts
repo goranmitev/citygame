@@ -3,21 +3,19 @@ import { Game, GameSystem } from '../core/Game';
 import { WalkSystem, InteractZone } from './WalkSystem';
 import { CityBuilder } from '../city/CityBuilder';
 import { BlockDef } from '../city/CityLayout';
-import { EventBus, Events, OrderSpawnedEvent, OrderPickedUpEvent, OrderDeliveredEvent } from '../core/EventBus';
+import {
+  EventBus, Events, ScoreEntry,
+  NetWelcomeEvent, NetOrderSpawnedEvent, NetPickupConfirmedEvent,
+  NetPickupDeniedEvent, NetPickupLockedEvent, NetDeliveredEvent, NetFailedEvent,
+} from '../core/EventBus';
+import { NetworkSystem } from './NetworkSystem';
 import { createRNG } from '../utils/random';
 import {
   DELIVERY_RESTAURANT_COUNT,
   DELIVERY_INTERACT_RADIUS,
   DELIVERY_MAX_FAILURES,
-  DELIVERY_BASE_PAY,
-  DELIVERY_MAX_TIP,
-  DELIVERY_ORDER_VALUE_MIN,
-  DELIVERY_ORDER_VALUE_MAX,
   DELIVERY_TIME_BASE,
   DELIVERY_TIME_PER_UNIT,
-  DELIVERY_ORDER_INTERVAL_MIN,
-  DELIVERY_ORDER_INTERVAL_MAX,
-  DELIVERY_NEXT_ORDER_DELAY,
   CITY_SEED,
 } from '../constants';
 
@@ -39,14 +37,12 @@ const RESTAURANT_NAMES = [
 interface Restaurant {
   name: string;
   block: BlockDef;
-  /** World-space center of interact zone (in front of south face). */
   cx: number;
   cz: number;
   markerGroup: THREE.Group;
   markerCap: THREE.Mesh;
   signMesh: THREE.Mesh;
   hasOrder: boolean;
-  orderValue: number;
 }
 
 interface CarriedOrder {
@@ -70,12 +66,11 @@ export class DeliverySystem implements GameSystem {
 
   private scene!: THREE.Scene;
   private walker!: WalkSystem;
+  private net!: NetworkSystem;
   private restaurants: Restaurant[] = [];
   private nonRestaurantBlocks: BlockDef[] = [];
   private carried: CarriedOrder | null = null;
-  private balance = 0;
-  private failures = 0;
-  private nextSpawnIn = 2; // first order after 2 seconds
+  private scores: Record<string, ScoreEntry> = {};
   private gameOver = false;
   private notifyTimeout = 0;
   private _elapsed = 0;
@@ -86,12 +81,12 @@ export class DeliverySystem implements GameSystem {
   private notifyEl!: HTMLDivElement;
 
   init(game: Game): void {
-    this.scene = game.scene;
+    this.scene  = game.scene;
     this.walker = game.getSystem<WalkSystem>('player')!;
+    this.net    = game.getSystem<NetworkSystem>('network')!;
     const builder = game.getSystem<CityBuilder>('city')!;
     const { blocks } = builder.layout;
 
-    // Shuffle non-park blocks and pick restaurants
     const rng = createRNG(CITY_SEED + 9973);
     const nonPark = blocks.filter(b => !b.isPark && b.plots.length > 0);
     const shuffled = [...nonPark];
@@ -103,7 +98,6 @@ export class DeliverySystem implements GameSystem {
     const rSet = new Set(rBlocks);
     this.nonRestaurantBlocks = nonPark.filter(b => !rSet.has(b));
 
-    // Shuffle restaurant names
     const names = [...RESTAURANT_NAMES];
     for (let i = names.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
@@ -112,54 +106,44 @@ export class DeliverySystem implements GameSystem {
 
     rBlocks.forEach((block, i) => {
       const name = names[i % names.length];
-      // Interact zone just in front of the south face, in the sidewalk
       const cx = block.x + block.width / 2;
       const cz = block.z + block.depth + 2;
-
       const signMesh = this.buildSign(block, name, cx);
       const { group: markerGroup, cap: markerCap } = this.buildMarker(cx, cz, 0x22cc44);
       markerGroup.visible = false;
-
-      this.restaurants.push({ name, block, cx, cz, markerGroup, markerCap, signMesh, hasOrder: false, orderValue: 0 });
+      this.restaurants.push({ name, block, cx, cz, markerGroup, markerCap, signMesh, hasOrder: false });
     });
 
     this.buildHUD();
-    this.refreshStats();
+    this.refreshScores();
+
+    EventBus.on<NetWelcomeEvent>        (Events.NET_WELCOME,          this.onWelcome);
+    EventBus.on<NetOrderSpawnedEvent>   (Events.NET_ORDER_SPAWNED,    this.onOrderSpawned);
+    EventBus.on<NetPickupConfirmedEvent>(Events.NET_PICKUP_CONFIRMED, this.onPickupConfirmed);
+    EventBus.on<NetPickupDeniedEvent>   (Events.NET_PICKUP_DENIED,    this.onPickupDenied);
+    EventBus.on<NetPickupLockedEvent>   (Events.NET_PICKUP_LOCKED,    this.onPickupLocked);
+    EventBus.on<NetDeliveredEvent>      (Events.NET_DELIVERED,        this.onDelivered);
+    EventBus.on<NetFailedEvent>         (Events.NET_FAILED,           this.onFailed);
   }
 
   update(delta: number): void {
     if (this.gameOver) return;
     this._elapsed += delta;
 
-    // Spawn orders
-    this.nextSpawnIn -= delta;
-    if (this.nextSpawnIn <= 0) {
-      this.spawnOrder();
-      this.nextSpawnIn = DELIVERY_ORDER_INTERVAL_MIN +
-        Math.random() * (DELIVERY_ORDER_INTERVAL_MAX - DELIVERY_ORDER_INTERVAL_MIN);
-    }
-
-    // Tick timer for carried order
+    // Visual countdown only — server is the timeout authority
     if (this.carried) {
       this.carried.elapsed += delta;
       const remaining = this.carried.timeLimit - this.carried.elapsed;
-      if (remaining <= 0) {
-        this.failDelivery();
-      } else {
-        this.drawTimer(remaining, this.carried.timeLimit, this.carried.orderValue);
-      }
+      if (remaining > 0) this.drawTimer(remaining, this.carried.timeLimit, this.carried.orderValue);
     }
 
-    // Animate marker caps (bob up and down)
+    // Bob marker caps
     const bob = Math.sin(this._elapsed * (1000 / 300)) * 0.4;
     for (const r of this.restaurants) {
       if (r.hasOrder) r.markerCap.position.y = 11 + bob;
     }
-    if (this.carried) {
-      this.carried.destMarkerCap.position.y = 11 + bob;
-    }
+    if (this.carried) this.carried.destMarkerCap.position.y = 11 + bob;
 
-    // Notification fade
     if (this.notifyTimeout > 0) {
       this.notifyTimeout -= delta;
       if (this.notifyTimeout <= 0) this.notifyEl.style.display = 'none';
@@ -179,153 +163,168 @@ export class DeliverySystem implements GameSystem {
       this.scene.remove(this.carried.destMarkerGroup);
       this.walker.unregisterInteractZone('delivery_dest');
     }
+    EventBus.off(Events.NET_WELCOME,          this.onWelcome);
+    EventBus.off(Events.NET_ORDER_SPAWNED,    this.onOrderSpawned);
+    EventBus.off(Events.NET_PICKUP_CONFIRMED, this.onPickupConfirmed);
+    EventBus.off(Events.NET_PICKUP_DENIED,    this.onPickupDenied);
+    EventBus.off(Events.NET_PICKUP_LOCKED,    this.onPickupLocked);
+    EventBus.off(Events.NET_DELIVERED,        this.onDelivered);
+    EventBus.off(Events.NET_FAILED,           this.onFailed);
   }
 
   // ---------------------------------------------------------------------------
+  // Server event handlers
 
-  private spawnOrder(): void {
-    const available = this.restaurants.filter(r => !r.hasOrder);
-    if (available.length === 0) return;
+  private onWelcome = (data: NetWelcomeEvent): void => {
+    this.scores = data.gameState.scores;
+    this.refreshScores();
+    for (let i = 0; i < data.gameState.restaurants.length; i++) {
+      const rs = data.gameState.restaurants[i];
+      if (rs.hasOrder && rs.lockedBy === null) {
+        this.showOrderAt(i, rs.orderValue);
+      }
+    }
+  };
 
-    const r = available[Math.floor(Math.random() * available.length)];
-    const idx = this.restaurants.indexOf(r);
-    r.orderValue = Math.round(
-      DELIVERY_ORDER_VALUE_MIN + Math.random() * (DELIVERY_ORDER_VALUE_MAX - DELIVERY_ORDER_VALUE_MIN)
-    );
+  private onOrderSpawned = (data: NetOrderSpawnedEvent): void => {
+    this.showOrderAt(data.restaurantIndex, data.orderValue);
+  };
+
+  private onPickupConfirmed = (data: NetPickupConfirmedEvent): void => {
+    const r = this.restaurants[data.restaurantIndex];
+    if (!r) return;
+
+    this.clearRestaurantMarker(data.restaurantIndex);
+
+    const { group: destGroup, cap: destCap } = this.buildMarker(data.destCx, data.destCz, 0xff8800);
+    this.carried = {
+      restaurantIndex: data.restaurantIndex,
+      orderValue:      data.orderValue,
+      timeLimit:       data.timeLimit,
+      elapsed: 0,
+      destCx: data.destCx,
+      destCz: data.destCz,
+      destMarkerGroup: destGroup,
+      destMarkerCap:   destCap,
+    };
+
+    this.walker.registerInteractZone({
+      id: 'delivery_dest',
+      center: new THREE.Vector3(data.destCx, 0, data.destCz),
+      radius: DELIVERY_INTERACT_RADIUS,
+      getPrompt: () => 'Press E to deliver order',
+      onInteract: () => this.net.requestDeliver(),
+    });
+
+    this.destDot = { x: data.destCx, z: data.destCz };
+    this.timerEl.style.display = 'block';
+    this.notify(`Order picked up! Deliver within ${Math.ceil(data.timeLimit)}s`, '#22cc44');
+  };
+
+  private onPickupDenied = (data: NetPickupDeniedEvent): void => {
+    this.clearRestaurantMarker(data.restaurantIndex);
+    this.notify('Order taken!', '#f5a623');
+  };
+
+  private onPickupLocked = (data: NetPickupLockedEvent): void => {
+    this.clearRestaurantMarker(data.restaurantIndex);
+  };
+
+  private onDelivered = (data: NetDeliveredEvent): void => {
+    this.scores = data.scores;
+    this.refreshScores();
+
+    if (data.playerId !== this.net.playerId) return;
+
+    if (this.carried) {
+      this.removeMarker(this.carried.destMarkerGroup);
+      this.walker.unregisterInteractZone('delivery_dest');
+      this.carried = null;
+      this.destDot = null;
+      this.timerEl.style.display = 'none';
+    }
+    const total = data.scores[this.net.playerId]?.balance ?? 0;
+    this.notify(`Delivered! +$${data.pay}  ($${total} total)`, '#22cc44');
+    EventBus.emit(Events.ORDER_DELIVERED, { pay: data.pay, tipPercent: 0 });
+  };
+
+  private onFailed = (data: NetFailedEvent): void => {
+    this.scores = data.scores;
+    this.refreshScores();
+
+    if (data.playerId !== this.net.playerId) return;
+
+    if (this.carried) {
+      this.removeMarker(this.carried.destMarkerGroup);
+      this.walker.unregisterInteractZone('delivery_dest');
+      this.carried = null;
+      this.destDot = null;
+      this.timerEl.style.display = 'none';
+    }
+    this.notify('Time out! Order failed.', '#cc2200');
+    EventBus.emit(Events.ORDER_FAILED, undefined);
+
+    const myScore = data.scores[this.net.playerId];
+    if (myScore && myScore.failures >= DELIVERY_MAX_FAILURES) {
+      this.showGameOver(myScore.balance);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+
+  private showOrderAt(restaurantIndex: number, orderValue: number): void {
+    const r = this.restaurants[restaurantIndex];
+    if (!r || r.hasOrder) return;
+
     r.hasOrder = true;
     r.markerGroup.visible = true;
     this.refreshPickupDots();
 
     const zone: InteractZone = {
-      id: `restaurant_${idx}`,
+      id: `restaurant_${restaurantIndex}`,
       center: new THREE.Vector3(r.cx, 0, r.cz),
       radius: DELIVERY_INTERACT_RADIUS,
       getPrompt: () => this.carried
         ? 'Already carrying an order!'
-        : `Press E to pick up — $${r.orderValue} order`,
-      onInteract: () => { if (!this.carried) this.pickUp(idx); },
+        : `Press E to pick up — $${orderValue} order`,
+      onInteract: () => {
+        if (this.carried) return;
+        const destBlock = this.nonRestaurantBlocks[Math.floor(Math.random() * this.nonRestaurantBlocks.length)];
+        const destCx    = destBlock.x + destBlock.width / 2;
+        const destCz    = destBlock.z + destBlock.depth + 2;
+        const dist      = Math.hypot(destCx - r.cx, destCz - r.cz);
+        const timeLimit = DELIVERY_TIME_BASE + dist * DELIVERY_TIME_PER_UNIT;
+        this.net.requestPickup(restaurantIndex, destCx, destCz, timeLimit);
+      },
     };
     this.walker.registerInteractZone(zone);
-
-    EventBus.emit<OrderSpawnedEvent>(Events.ORDER_SPAWNED, { restaurantName: r.name, orderValue: r.orderValue });
+    EventBus.emit(Events.ORDER_SPAWNED, { restaurantName: r.name, orderValue });
   }
 
-  private pickUp(restaurantIndex: number): void {
+  private clearRestaurantMarker(restaurantIndex: number): void {
     const r = this.restaurants[restaurantIndex];
-    if (!r.hasOrder || this.nonRestaurantBlocks.length === 0) return;
-
-    // Random delivery destination (non-restaurant building)
-    const destBlock = this.nonRestaurantBlocks[Math.floor(Math.random() * this.nonRestaurantBlocks.length)];
-    const destCx = destBlock.x + destBlock.width / 2;
-    const destCz = destBlock.z + destBlock.depth + 2;
-
-    const dist = Math.hypot(destCx - r.cx, destCz - r.cz);
-    const timeLimit = DELIVERY_TIME_BASE + dist * DELIVERY_TIME_PER_UNIT;
-
-    const { group: destGroup, cap: destCap } = this.buildMarker(destCx, destCz, 0xff8800);
-
-    this.carried = {
-      restaurantIndex,
-      orderValue: r.orderValue,
-      timeLimit,
-      elapsed: 0,
-      destCx,
-      destCz,
-      destMarkerGroup: destGroup,
-      destMarkerCap: destCap,
-    };
-
+    if (!r) return;
     r.hasOrder = false;
     r.markerGroup.visible = false;
     this.walker.unregisterInteractZone(`restaurant_${restaurantIndex}`);
     this.refreshPickupDots();
-
-    this.walker.registerInteractZone({
-      id: 'delivery_dest',
-      center: new THREE.Vector3(destCx, 0, destCz),
-      radius: DELIVERY_INTERACT_RADIUS,
-      getPrompt: () => 'Press E to deliver order',
-      onInteract: () => this.deliver(),
-    });
-
-    this.destDot = { x: destCx, z: destCz };
-    this.timerEl.style.display = 'block';
-
-    EventBus.emit<OrderPickedUpEvent>(Events.ORDER_PICKED_UP, {
-      restaurantName: r.name,
-      orderValue: r.orderValue,
-      timeLimit,
-    });
-
-    this.notify(`Order picked up! Deliver within ${Math.ceil(timeLimit)}s`, '#22cc44');
   }
 
-  private deliver(): void {
-    if (!this.carried) return;
-    const { orderValue, timeLimit, elapsed, destMarkerGroup } = this.carried;
-
-    const remaining = Math.max(0, timeLimit - elapsed);
-    const tipFrac = (remaining / timeLimit) * DELIVERY_MAX_TIP;
-    const pay = Math.round(orderValue * (DELIVERY_BASE_PAY + tipFrac));
-
-    this.balance += pay;
-    this.walker.unregisterInteractZone('delivery_dest');
-    this.removeMarker(destMarkerGroup);
-    this.carried = null;
-    this.destDot = null;
-    this.timerEl.style.display = 'none';
-
-    this.refreshStats();
-    EventBus.emit<OrderDeliveredEvent>(Events.ORDER_DELIVERED, {
-      pay,
-      tipPercent: Math.round(tipFrac * 100),
-    });
-    this.notify(`Delivered! +$${pay}  (tip ${Math.round(tipFrac * 100)}%)`, '#22cc44');
-
-    this.nextSpawnIn = Math.min(this.nextSpawnIn, DELIVERY_NEXT_ORDER_DELAY);
-  }
-
-  private failDelivery(): void {
-    if (!this.carried) return;
-    const { destMarkerGroup } = this.carried;
-
-    this.walker.unregisterInteractZone('delivery_dest');
-    this.removeMarker(destMarkerGroup);
-    this.carried = null;
-    this.destDot = null;
-    this.timerEl.style.display = 'none';
-
-    this.failures++;
-    this.refreshStats();
-    EventBus.emit(Events.ORDER_FAILED, undefined);
-    this.notify('Time out! Order failed.', '#cc2200');
-
-    if (this.failures >= DELIVERY_MAX_FAILURES) {
-      this.showGameOver();
-      return;
-    }
-    this.nextSpawnIn = Math.min(this.nextSpawnIn, DELIVERY_NEXT_ORDER_DELAY);
-  }
-
-  private showGameOver(): void {
+  private showGameOver(balance: number): void {
     this.gameOver = true;
     const el = document.createElement('div');
     Object.assign(el.style, {
-      position: 'fixed',
-      inset: '0',
+      position: 'fixed', inset: '0',
       background: 'rgba(0,0,0,0.8)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: '#fff',
-      fontFamily: 'sans-serif',
-      zIndex: '1000',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      color: '#fff', fontFamily: 'sans-serif', zIndex: '1000',
     });
     el.innerHTML = `
       <div style="font-size:52px;font-weight:bold;color:#ff4444;letter-spacing:0.05em">GAME OVER</div>
       <div style="font-size:22px;margin-top:14px;opacity:0.8">You failed ${DELIVERY_MAX_FAILURES} deliveries</div>
-      <div style="font-size:34px;margin-top:16px;color:#f5c842">Final earnings: $${this.balance}</div>
+      <div style="font-size:34px;margin-top:16px;color:#f5c842">Final earnings: $${balance}</div>
       <div style="font-size:15px;margin-top:28px;opacity:0.5">Refresh the page to play again</div>
     `;
     document.body.appendChild(el);
@@ -363,17 +362,15 @@ export class DeliverySystem implements GameSystem {
     const geo = new THREE.PlaneGeometry(4, 0.75);
     const mesh = new THREE.Mesh(geo, mat);
 
-    // Find the plot with the largest Z face (closest to south/+Z side of block)
-    // and place the sign flush against that building wall
     let signX = cx;
-    let signZ = block.z + block.depth; // fallback
+    let signZ = block.z + block.depth;
     if (block.plots.length > 0) {
       let best = block.plots[0];
       for (const p of block.plots) {
         if (p.z + p.depth > best.z + best.depth) best = p;
       }
       signX = best.x + best.width / 2;
-      signZ = best.z + best.depth + 0.02; // flush on the south wall
+      signZ = best.z + best.depth + 0.02;
     }
 
     mesh.position.set(signX, 3.5, signZ);
@@ -389,7 +386,6 @@ export class DeliverySystem implements GameSystem {
     pole.position.set(0, 5.5, 0);
     group.add(pole);
 
-    // Diamond cap (rotated box)
     const cap = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.85), mat);
     cap.position.set(0, 11, 0);
     cap.rotation.z = Math.PI / 4;
@@ -415,79 +411,72 @@ export class DeliverySystem implements GameSystem {
   // HUD
 
   private buildHUD(): void {
-    // Timer — right of speedometer (which is 120px wide at left:10)
     this.timerEl = document.createElement('div');
     Object.assign(this.timerEl.style, {
-      position: 'fixed',
-      bottom: '10px',
-      left: '140px',
-      background: 'rgba(10,12,20,0.78)',
-      color: '#fff',
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      padding: '8px 16px',
-      borderRadius: '8px',
+      position: 'fixed', bottom: '10px', left: '140px',
+      background: 'rgba(10,12,20,0.78)', color: '#fff',
+      fontFamily: 'monospace', fontSize: '14px',
+      padding: '8px 16px', borderRadius: '8px',
       border: '1px solid rgba(255,255,255,0.2)',
-      pointerEvents: 'none',
-      display: 'none',
-      zIndex: '100',
-      minWidth: '110px',
-      textAlign: 'center',
+      pointerEvents: 'none', display: 'none', zIndex: '100',
+      minWidth: '110px', textAlign: 'center',
     });
     document.body.appendChild(this.timerEl);
 
-    // Stats panel — top right (desktop), top center (mobile to avoid minimap)
     const isMobile = 'ontouchstart' in window;
     this.statsEl = document.createElement('div');
     Object.assign(this.statsEl.style, {
-      position: 'fixed',
-      top: '10px',
+      position: 'fixed', top: '10px',
       right: isMobile ? 'auto' : '10px',
       left: isMobile ? '50%' : 'auto',
       transform: isMobile ? 'translateX(-50%)' : 'none',
-      background: 'rgba(10,12,20,0.78)',
-      color: '#f5c842',
-      fontFamily: 'monospace',
-      fontSize: '17px',
-      fontWeight: 'bold',
-      padding: '8px 16px',
-      borderRadius: '8px',
+      background: 'rgba(10,12,20,0.78)', color: '#f5c842',
+      fontFamily: 'monospace', fontSize: '16px', fontWeight: 'bold',
+      padding: '8px 16px', borderRadius: '8px',
       border: '1px solid rgba(255,255,255,0.18)',
-      pointerEvents: 'none',
-      zIndex: '100',
-      lineHeight: '1.6',
+      pointerEvents: 'none', zIndex: '100', lineHeight: '1.7',
       textAlign: isMobile ? 'center' : 'right',
     });
     document.body.appendChild(this.statsEl);
 
-    // Notification — upper center
     this.notifyEl = document.createElement('div');
     Object.assign(this.notifyEl.style, {
-      position: 'fixed',
-      top: '18%',
-      left: '50%',
+      position: 'fixed', top: '18%', left: '50%',
       transform: 'translateX(-50%)',
-      background: 'rgba(10,12,20,0.85)',
-      color: '#fff',
-      fontFamily: 'sans-serif',
-      fontSize: '18px',
-      padding: '12px 28px',
-      borderRadius: '8px',
+      background: 'rgba(10,12,20,0.85)', color: '#fff',
+      fontFamily: 'sans-serif', fontSize: '18px',
+      padding: '12px 28px', borderRadius: '8px',
       border: '1px solid rgba(255,255,255,0.2)',
-      pointerEvents: 'none',
-      display: 'none',
-      zIndex: '200',
+      pointerEvents: 'none', display: 'none', zIndex: '200',
       whiteSpace: 'nowrap',
     });
     document.body.appendChild(this.notifyEl);
   }
 
-  private refreshStats(): void {
-    const livesLeft = DELIVERY_MAX_FAILURES - this.failures;
-    const liveDots = '\u25cf'.repeat(livesLeft) + '\u25cb'.repeat(this.failures);
-    this.statsEl.innerHTML =
-      `<div>$${this.balance}</div>` +
-      `<div style="font-size:13px;color:#ff6666;letter-spacing:0.1em">${liveDots}</div>`;
+  private refreshScores(): void {
+    const myId = this.net?.playerId ?? '';
+    const entries = Object.entries(this.scores);
+
+    if (entries.length === 0) {
+      this.statsEl.innerHTML = '<div style="opacity:0.5">Connecting…</div>';
+      return;
+    }
+
+    let html = '';
+    for (const [id, s] of entries) {
+      const isMe = id === myId;
+      const livesLeft = Math.max(0, DELIVERY_MAX_FAILURES - s.failures);
+      const dots = '\u25cf'.repeat(livesLeft) + '\u25cb'.repeat(s.failures);
+      const label = s.nickname || (isMe ? 'You' : '?');
+      html +=
+        `<div style="display:flex;align-items:center;gap:8px;${isMe ? '' : 'opacity:0.75'}">` +
+        `<span style="color:${s.color};font-size:16px">\u25cf</span>` +
+        `<span style="font-size:13px;opacity:0.8;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>` +
+        `<span>${isMe ? '<b>' : ''}$${s.balance}${isMe ? '</b>' : ''}</span>` +
+        `<span style="font-size:11px;color:#ff8888;letter-spacing:0.05em">${dots}</span>` +
+        `</div>`;
+    }
+    this.statsEl.innerHTML = html;
   }
 
   private drawTimer(remaining: number, total: number, orderValue: number): void {

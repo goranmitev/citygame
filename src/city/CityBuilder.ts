@@ -122,6 +122,42 @@ export class CityBuilder implements GameSystem {
     }
   }
 
+  /** Returns 4 spawn positions spread across the city street grid (one per quadrant). */
+  getSpawnPositions(): Array<{ x: number; z: number; heading: number }> {
+    const vStreets = this.layout.streets
+      .filter(s => s.depth > s.width)
+      .sort((a, b) => (a.x + a.width / 2) - (b.x + b.width / 2));
+
+    if (vStreets.length === 0) {
+      const cx = this.layout.totalWidth / 2;
+      const cz = this.layout.totalDepth / 2;
+      return [
+        { x: cx - 60, z: cz - 60, heading: 0 },
+        { x: cx + 60, z: cz - 60, heading: 0 },
+        { x: cx + 60, z: cz + 60, heading: Math.PI },
+        { x: cx - 60, z: cz + 60, heading: Math.PI },
+      ];
+    }
+
+    const midX  = this.layout.totalWidth  / 2;
+    const q1z   = this.layout.totalDepth  * 0.25;
+    const q3z   = this.layout.totalDepth  * 0.75;
+    const left  = vStreets.filter(s => s.x + s.width / 2 <  midX);
+    const right = vStreets.filter(s => s.x + s.width / 2 >= midX);
+
+    const pick = (group: typeof vStreets, zOff: number, heading: number) => {
+      const s = group.length > 0 ? group[Math.floor(group.length / 2)] : vStreets[0];
+      return { x: s.x + s.width / 2, z: s.z + zOff, heading };
+    };
+
+    return [
+      pick(left,  q1z, 0),          // spawn 0: NW  (default, also used in singleplayer)
+      pick(right, q1z, Math.PI),     // spawn 1: NE
+      pick(right, q3z, Math.PI),     // spawn 2: SE
+      pick(left,  q3z, 0),           // spawn 3: SW
+    ];
+  }
+
   /** Merge an array of geometries into a single mesh and add to scene. */
   private mergeBucket(
     scene: THREE.Scene,
