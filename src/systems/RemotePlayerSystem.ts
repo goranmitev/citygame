@@ -13,6 +13,7 @@ import {
   PLAYER_HEIGHT,
   CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
 } from '../constants';
+import { createCarDebugHelper } from '../utils/carCollider';
 
 interface RemotePlayer {
   targetPos:      THREE.Vector3;
@@ -22,6 +23,7 @@ interface RemotePlayer {
   displayHeading: number;
   carGroup:       THREE.Group;
   walkGroup:      THREE.Group;
+  debugBox?:      THREE.LineSegments;
   mixer:          THREE.AnimationMixer | null;
   runAction:      THREE.AnimationAction | null;
   prevPos:        THREE.Vector3;
@@ -35,6 +37,8 @@ interface QueuedPlayer {
 
 const LERP_K          = 10;
 const MOVE_THRESHOLD  = 0.05; // m/s — below this speed, idle (no run anim)
+const DEBUG_REMOTE_CAR_COLLIDER = false;
+const DEBUG_REMOTE_CAR_COLLIDER_COLOR = 0x0000ff;
 
 export class RemotePlayerSystem implements GameSystem {
   readonly name = 'remote';
@@ -46,6 +50,8 @@ export class RemotePlayerSystem implements GameSystem {
   private walkerTemplate: THREE.Group | null = null;
   private walkerClips:    THREE.AnimationClip[] = [];
   private carYOffset    = 0;
+  private remoteHalfW   = CAR_HALF_W;
+  private remoteHalfL   = CAR_HALF_L;
   private modelsReady   = false;
   private pendingQueue:   QueuedPlayer[] = [];
 
@@ -67,7 +73,11 @@ export class RemotePlayerSystem implements GameSystem {
         wrapper.add(model);
 
         const box = new THREE.Box3().setFromObject(wrapper);
+        const size = new THREE.Vector3();
+        box.getSize(size);
         this.carYOffset = -box.min.y + CAR_GROUND_CLEARANCE;
+        this.remoteHalfW = size.x / 2;
+        this.remoteHalfL = size.z / 2;
 
         this.carTemplate = wrapper;
         resolve();
@@ -126,6 +136,11 @@ export class RemotePlayerSystem implements GameSystem {
     const r = this.remotes.get(data.playerId);
     if (!r) return;
     this.scene.remove(r.carGroup, r.walkGroup);
+    if (r.debugBox) {
+      this.scene.remove(r.debugBox);
+      r.debugBox.geometry.dispose();
+      (r.debugBox.material as THREE.Material).dispose();
+    }
     r.mixer?.stopAllAction();
     this.remotes.delete(data.playerId);
   };
@@ -192,6 +207,11 @@ export class RemotePlayerSystem implements GameSystem {
     const carGroup = new THREE.Group();
     carGroup.add(carClone);
 
+    const debugBox = DEBUG_REMOTE_CAR_COLLIDER
+      ? createCarDebugHelper(DEBUG_REMOTE_CAR_COLLIDER_COLOR)
+      : undefined;
+    if (debugBox) this.scene.add(debugBox);
+
     // --- Walker ---
     const walkClone = skeletonClone(this.walkerTemplate!) as THREE.Group;
     walkClone.traverse((child) => {
@@ -229,6 +249,7 @@ export class RemotePlayerSystem implements GameSystem {
       prevPos:        placeholder ? placeholder.prevPos.clone()     : new THREE.Vector3(),
       carGroup,
       walkGroup,
+      debugBox,
       mixer,
       runAction,
     };
@@ -237,21 +258,16 @@ export class RemotePlayerSystem implements GameSystem {
   }
 
   /** Returns collision data for all remote players currently driving. */
-  getCarColliders(): Array<{ id: string; box: THREE.Box3; pos: THREE.Vector3 }> {
-    const result: Array<{ id: string; box: THREE.Box3; pos: THREE.Vector3 }> = [];
+  getCarColliders(): Array<{ id: string; pos: THREE.Vector3; heading: number; halfW: number; halfL: number }> {
+    const result: Array<{ id: string; pos: THREE.Vector3; heading: number; halfW: number; halfL: number }> = [];
     for (const [id, r] of this.remotes) {
       if (!r.isInCar || !this.scene.children.includes(r.carGroup)) continue;
-      const sinH = Math.abs(Math.sin(r.displayHeading));
-      const cosH = Math.abs(Math.cos(r.displayHeading));
-      const hwX = cosH * CAR_HALF_W + sinH * CAR_HALF_L;
-      const hwZ = sinH * CAR_HALF_W + cosH * CAR_HALF_L;
       result.push({
         id,
         pos: r.displayPos,
-        box: new THREE.Box3(
-          new THREE.Vector3(r.displayPos.x - hwX, 0,          r.displayPos.z - hwZ),
-          new THREE.Vector3(r.displayPos.x + hwX, CAR_HEIGHT, r.displayPos.z + hwZ),
-        ),
+        heading: r.displayHeading,
+        halfW: this.remoteHalfW,
+        halfL: this.remoteHalfL,
       });
     }
     return result;
@@ -277,6 +293,15 @@ export class RemotePlayerSystem implements GameSystem {
       }
       root.rotation.y = r.displayHeading;
 
+      if (r.debugBox) {
+        r.debugBox.visible = r.isInCar;
+        if (r.isInCar) {
+          r.debugBox.scale.set(this.remoteHalfW, CAR_HEIGHT, this.remoteHalfL);
+          r.debugBox.position.set(r.displayPos.x, 0, r.displayPos.z);
+          r.debugBox.rotation.y = r.displayHeading;
+        }
+      }
+
       // Drive walk animation from movement speed
       if (!r.isInCar && r.mixer && r.runAction) {
         const speed = r.displayPos.distanceTo(r.prevPos) / delta;
@@ -299,6 +324,11 @@ export class RemotePlayerSystem implements GameSystem {
     EventBus.off(Events.NET_PLAYER_POS,     this.onPos);
     for (const r of this.remotes.values()) {
       this.scene.remove(r.carGroup, r.walkGroup);
+      if (r.debugBox) {
+        this.scene.remove(r.debugBox);
+        r.debugBox.geometry.dispose();
+        (r.debugBox.material as THREE.Material).dispose();
+      }
       r.mixer?.stopAllAction();
     }
     this.remotes.clear();

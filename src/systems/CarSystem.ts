@@ -7,6 +7,13 @@ import { InputSystem } from './InputSystem';
 import { SceneSystem } from './SceneSystem';
 import { RemotePlayerSystem } from './RemotePlayerSystem';
 import {
+  createCarDebugHelper,
+  getCarAABB,
+  getCarRotationExtents,
+  obbIntersectsAabbXZ,
+  obbIntersectsObbXZ,
+} from '../utils/carCollider';
+import {
   CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
   CAR_MAX_SPEED_FWD, CAR_MAX_SPEED_REV,
   CAR_ACCEL, CAR_BRAKE_FORCE, CAR_DRAG,
@@ -24,6 +31,8 @@ const SIDEWALK_HEIGHT = 0.15;
 const SIDEWALK_Y_LERP = 10;
 
 const _camHit = new THREE.Vector3();
+const DEBUG_CAR_COLLIDER = false;
+const DEBUG_CAR_COLLIDER_COLOR = 0xff0000;
 
 export class CarSystem implements GameSystem {
   readonly name = 'car';
@@ -71,6 +80,7 @@ export class CarSystem implements GameSystem {
   private _lookAt = new THREE.Vector3();
   private _camRay = new THREE.Ray();
   private _camRayDir = new THREE.Vector3();
+  private debugHelper?: THREE.LineSegments;
 
   // Colliders registered by the city
   private colliders: THREE.Box3[] = [];
@@ -96,6 +106,10 @@ export class CarSystem implements GameSystem {
     this.input = game.getSystem<InputSystem>('input')!;
     this.sceneSystem = game.getSystem<SceneSystem>('scene')!;
     this.scene = game.scene;
+    if (DEBUG_CAR_COLLIDER) {
+      this.debugHelper = createCarDebugHelper(DEBUG_CAR_COLLIDER_COLOR);
+      this.scene.add(this.debugHelper);
+    }
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('/draco/');
     this.gltfLoader = new GLTFLoader();
@@ -138,32 +152,30 @@ export class CarSystem implements GameSystem {
    * Recomputed each call — call once per frame from WalkSystem.
    */
   getWorldBox(): THREE.Box3 {
-    const sinH = Math.sin(this.heading);
-    const cosH = Math.cos(this.heading);
-    const corners = [
-      [ this.halfW,  this.halfL],
-      [-this.halfW,  this.halfL],
-      [ this.halfW, -this.halfL],
-      [-this.halfW, -this.halfL],
-    ].map(([lx, lz]) => ({
-      x: this.position.x + lx * cosH - lz * sinH,
-      z: this.position.z + lx * sinH + lz * cosH,
-    }));
-
-    const xs = corners.map((c) => c.x);
-    const zs = corners.map((c) => c.z);
-    return new THREE.Box3(
-      new THREE.Vector3(Math.min(...xs), 0,          Math.min(...zs)),
-      new THREE.Vector3(Math.max(...xs), CAR_HEIGHT, Math.max(...zs)),
-    );
+    return getCarAABB(this.position, this.heading, this.halfW, this.halfL, CAR_HEIGHT);
   }
 
   /** Apply an XZ impulse from a remote car collision. */
   applyImpulse(vx: number, vz: number): void {
+    // Apply impulse directly in world space, not just forward projection
     const fwdX = Math.sin(this.heading);
     const fwdZ = Math.cos(this.heading);
-    const proj = vx * fwdX + vz * fwdZ;
-    this.speed = Math.max(-CAR_MAX_SPEED_REV, Math.min(CAR_MAX_SPEED_FWD, this.speed + proj * 0.8));
+    
+    // Project onto forward and lateral axes
+    const fwdComp = vx * fwdX + vz * fwdZ;
+    const latX = -Math.cos(this.heading);
+    const latZ = Math.sin(this.heading);
+    const latComp = vx * latX + vz * latZ;
+    
+    // Apply forward impulse (stronger)
+    this.speed = Math.max(-CAR_MAX_SPEED_REV, Math.min(CAR_MAX_SPEED_FWD, this.speed + fwdComp * 1.2));
+    
+    // Apply lateral impulse by adjusting heading
+    // This makes the car rotate away from the collision
+    if (Math.abs(latComp) > 0.1) {
+      const rotationImpulse = Math.sign(latComp) * 0.2;
+      this.heading += rotationImpulse;
+    }
   }
 
   /** Bring the car to an immediate stop. */
@@ -248,6 +260,7 @@ export class CarSystem implements GameSystem {
     this.suspensionOffset = Math.sin(this._wheelAngle * 1.5) * 0.025 * Math.min(1.0, Math.abs(this.speed) / 8);
 
     this.updateCarMesh();
+    this.updateDebugHelper();
   }
 
   dispose(): void {
@@ -267,6 +280,19 @@ export class CarSystem implements GameSystem {
       }
     });
     this.scene.remove(this.carGroup);
+    if (this.debugHelper) {
+      this.scene.remove(this.debugHelper);
+      this.debugHelper.geometry.dispose();
+      (this.debugHelper.material as THREE.Material).dispose();
+    }
+  }
+
+  private updateDebugHelper(): void {
+    if (!this.debugHelper) return;
+    this.debugHelper.scale.set(this.halfW, CAR_HEIGHT, this.halfL);
+    this.debugHelper.position.set(this.position.x, 0, this.position.z);
+    this.debugHelper.rotation.y = this.heading;
+    this.debugHelper.visible = DEBUG_CAR_COLLIDER;
   }
 
   // ---------------------------------------------------------------------------
@@ -355,8 +381,17 @@ export class CarSystem implements GameSystem {
         const nz = this.position.z - pz;
         const len = Math.sqrt(nx * nx + nz * nz) || 1;
         const preSpeed = Math.abs(this.speed);
-        this.speed *= -0.3;
-        const impulseMag = preSpeed * 0.5;
+        
+        // Bounce back
+        this.speed *= -0.4;
+        
+        // Separate cars to prevent overlap
+        const separationDist = 0.2;
+        this.position.x += (nx / len) * separationDist;
+        this.position.z += (nz / len) * separationDist;
+        
+        // Send stronger impulse to remote car
+        const impulseMag = (preSpeed + 5) * 0.7;
         EventBus.emit<NetSendCarImpactEvent>(Events.NET_SEND_CAR_IMPACT, {
           targetId: id, vx: (nx / len) * impulseMag, vz: (nz / len) * impulseMag,
         });
@@ -390,23 +425,20 @@ export class CarSystem implements GameSystem {
     const nx = this.position.x + dx;
     const nz = this.position.z + dz;
 
-    // Axis-aligned bounding box of the rotated car footprint
-    const sinH = Math.abs(Math.sin(this.heading));
-    const cosH = Math.abs(Math.cos(this.heading));
-    const hwX = cosH * this.halfW + sinH * this.halfL;
-    const hwZ = sinH * this.halfW + cosH * this.halfL;
-
-    this._tryBox.min.set(nx - hwX, 0,          nz - hwZ);
-    this._tryBox.max.set(nx + hwX, CAR_HEIGHT, nz + hwZ);
-
+    // Car vs. static world is performed with an oriented box in XZ.
     for (const box of this.colliders) {
-      if (this._tryBox.intersectsBox(box)) return false;
+      if (obbIntersectsAabbXZ(new THREE.Vector3(nx, 0, nz), this.heading, this.halfW, this.halfL, box)) {
+        return false;
+      }
     }
 
     const remotes = this.game.getSystem<RemotePlayerSystem>('remote');
     if (remotes) {
       for (const rc of remotes.getCarColliders()) {
-        if (this._tryBox.intersectsBox(rc.box)) {
+        if (obbIntersectsObbXZ(
+          new THREE.Vector3(nx, 0, nz), this.heading, this.halfW, this.halfL,
+          rc.pos, rc.heading, rc.halfW, rc.halfL,
+        )) {
           if (!this._remoteHitThisFrame) {
             this._remoteHitThisFrame = { id: rc.id, px: rc.pos.x, pz: rc.pos.z };
           }
@@ -415,7 +447,7 @@ export class CarSystem implements GameSystem {
       }
     }
 
-    // Clamp to city bounds using heading-aware extents
+    const { hwX, hwZ } = getCarRotationExtents(this.halfW, this.halfL, this.heading);
     const clampedX = Math.max(this.boundsMin.x + hwX, Math.min(this.boundsMax.x - hwX, nx));
     const clampedZ = Math.max(this.boundsMin.y + hwZ, Math.min(this.boundsMax.y - hwZ, nz));
     if (clampedX !== nx || clampedZ !== nz) {
