@@ -160,40 +160,42 @@ export function showLobby(): Promise<void> {
     const nickInput = root.querySelector<HTMLInputElement>('.lb-nick')!;
     nickInput.addEventListener('input', () => { playerOptions.nickname = nickInput.value.trim() || 'Player'; });
 
-    // Swatches with cross-disable
+    // Swatches — independent per row, multiplayer taken state from server
     const carRow = root.querySelector<HTMLElement>('#lb-car')!;
     const shirtRow = root.querySelector<HTMLElement>('#lb-shirt')!;
 
     const buildSwatches = (
       row: HTMLElement,
       initial: string,
-      takenColor: () => string,
       onPick: (c: string) => void,
-      otherRow: HTMLElement,
-    ) => {
+    ): ((taken: string[]) => void) => {
       for (const c of COLORS) {
         const sw = document.createElement('div');
-        sw.className = 'lb-swatch'
-          + (c === initial ? ' active' : '')
-          + (c === takenColor() ? ' taken' : '');
+        sw.className = 'lb-swatch' + (c === initial ? ' active' : '');
         sw.style.background = c;
         sw.dataset.color = c;
         sw.addEventListener('click', () => {
           row.querySelectorAll('.lb-swatch').forEach(s => s.classList.remove('active'));
           sw.classList.add('active');
           onPick(c);
-          otherRow.querySelectorAll<HTMLElement>('.lb-swatch').forEach(s => {
-            s.classList.toggle('taken', s.dataset.color === c);
-          });
         });
         row.appendChild(sw);
       }
+      return (taken: string[]) => {
+        row.querySelectorAll<HTMLElement>('.lb-swatch').forEach(s => {
+          const isTaken = taken.includes(s.dataset.color ?? '');
+          s.classList.toggle('taken', isTaken);
+          if (isTaken && s.classList.contains('active')) {
+            s.classList.remove('active');
+            const free = row.querySelector<HTMLElement>('.lb-swatch:not(.taken)');
+            if (free) { free.classList.add('active'); onPick(free.dataset.color!); }
+          }
+        });
+      };
     };
 
-    buildSwatches(carRow,   playerOptions.carColor,   () => playerOptions.shirtColor,
-      c => { playerOptions.carColor = c; },   shirtRow);
-    buildSwatches(shirtRow, playerOptions.shirtColor, () => playerOptions.carColor,
-      c => { playerOptions.shirtColor = c; }, carRow);
+    const updateCarTaken   = buildSwatches(carRow,   playerOptions.carColor,   c => { playerOptions.carColor = c; });
+    const updateShirtTaken = buildSwatches(shirtRow, playerOptions.shirtColor, c => { playerOptions.shirtColor = c; });
 
     // Connected players counter (multiplayer only)
     const countEl = root.querySelector<HTMLElement>('#lb-count')!;
@@ -212,13 +214,26 @@ export function showLobby(): Promise<void> {
         });
     };
 
+    const fetchColors = () => {
+      fetch(`${SERVER_URL}/colors`)
+        .then(r => r.json())
+        .then(({ takenCarColors, takenShirtColors }: { takenCarColors: string[]; takenShirtColors: string[] }) => {
+          updateCarTaken(takenCarColors);
+          updateShirtTaken(takenShirtColors);
+        })
+        .catch(() => {});
+    };
+
     const syncCount = () => {
       if (playerOptions.mode === 'multi') {
         fetchCount();
-        if (!poll) poll = setInterval(fetchCount, 3000);
+        fetchColors();
+        if (!poll) poll = setInterval(() => { fetchCount(); fetchColors(); }, 3000);
       } else {
         if (poll) { clearInterval(poll); poll = null; }
         countEl.style.display = 'none';
+        updateCarTaken([]);
+        updateShirtTaken([]);
       }
     };
 

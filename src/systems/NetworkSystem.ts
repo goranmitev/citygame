@@ -59,7 +59,8 @@ export class NetworkSystem implements GameSystem {
       setTimeout(() => {
         EventBus.emit(Events.NET_WELCOME, {
           playerId: 'local',
-          color: playerOptions.carColor,
+          carColor:   playerOptions.carColor,
+          shirtColor: playerOptions.shirtColor,
           playerIndex: 0,
           gameState: {
             players: [],
@@ -75,7 +76,11 @@ export class NetworkSystem implements GameSystem {
     this.connected = true;
 
     this.socket.on('connect', () => {
-      this.socket.emit('player:configure', { nickname: playerOptions.nickname });
+      this.socket.emit('player:configure', {
+        nickname:    playerOptions.nickname,
+        carColor:    playerOptions.carColor,
+        shirtColor:  playerOptions.shirtColor,
+      });
     });
 
     this.socket.on('server:full', () => {
@@ -84,7 +89,9 @@ export class NetworkSystem implements GameSystem {
 
     this.socket.on('game:welcome', (d) => {
       this.playerId    = d.playerId;
-      this.playerColor = d.color;
+      this.playerColor = d.carColor;
+      playerOptions.carColor   = d.carColor;
+      playerOptions.shirtColor = d.shirtColor;
       this.overrideSpawn(d.playerIndex);
       EventBus.emit(Events.NET_WELCOME, d);
     });
@@ -166,7 +173,8 @@ export class NetworkSystem implements GameSystem {
     const s = spawns[playerIndex % spawns.length];
     this.car.setSpawn(s.x, 0, s.z, s.heading);
     this.car.resetToSpawn();
-    this.walk.setSpawn(s.x, 0, s.z, s.heading);
+    const ep = this.car.entryPoint();
+    this.walk.setSpawn(ep.x, 0, ep.z, s.heading);
     this.walk.resetToSpawn();
   }
 

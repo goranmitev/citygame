@@ -8,9 +8,13 @@ const ORDER_INTERVAL_MIN = 5_000;
 const ORDER_INTERVAL_MAX = 15_000;
 const ORDER_VALUE_MIN = 8;
 const ORDER_VALUE_MAX = 25;
-const MAX_FAILURES = 3;
 const BASE_PAY = 1.0;
 const MAX_TIP = 0.5;
+
+const LOBBY_COLORS = [
+  '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71',
+  '#1abc9c', '#3498db', '#9b59b6', '#ecf0f1',
+];
 
 interface PosMsg {
   x: number; y: number; z: number;
@@ -28,7 +32,8 @@ interface ActiveDelivery {
 
 interface Player {
   id: string;
-  color: string;
+  carColor: string;
+  shirtColor: string;
   playerIndex: number;
   nickname: string;
   pos: PosMsg;
@@ -43,30 +48,49 @@ interface Restaurant {
   lockedBy: string | null;
 }
 
-const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
-let colorIdx = 0;
-
 const players = new Map<string, Player>();
+let nextPlayerIndex = 0;
+
 const rests: Restaurant[] = Array.from({ length: RESTAURANT_COUNT }, () => ({
   hasOrder: false, orderValue: 0, lockedBy: null,
 }));
 
+function pickColor(preferred: string | undefined, field: 'carColor' | 'shirtColor', excludeId: string): string {
+  const taken = new Set<string>();
+  for (const [id, p] of players) {
+    if (id !== excludeId) taken.add(p[field]);
+  }
+  if (preferred && LOBBY_COLORS.includes(preferred) && !taken.has(preferred)) return preferred;
+  for (const c of LOBBY_COLORS) {
+    if (!taken.has(c)) return c;
+  }
+  return LOBBY_COLORS[0];
+}
+
 const httpServer = http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'GET' && req.url === '/status') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ playerCount: players.size, maxPlayers: MAX_PLAYERS }));
+    return;
+  }
+  if (req.method === 'GET' && req.url === '/colors') {
+    const takenCarColors = [...players.values()].map(p => p.carColor);
+    const takenShirtColors = [...players.values()].map(p => p.shirtColor);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ takenCarColors, takenShirtColors }));
     return;
   }
   res.writeHead(404);
   res.end();
 });
+
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
 function getScores(): Record<string, { color: string; balance: number; failures: number; nickname: string }> {
   const out: Record<string, { color: string; balance: number; failures: number; nickname: string }> = {};
   for (const [id, p] of players) {
-    out[id] = { color: p.color, balance: p.balance, failures: p.failures, nickname: p.nickname };
+    out[id] = { color: p.carColor, balance: p.balance, failures: p.failures, nickname: p.nickname };
   }
   return out;
 }
@@ -78,9 +102,7 @@ function scheduleOrder(): void {
 
 function trySpawnOrder(): void {
   if (players.size > 0) {
-    const avail = rests
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => !r.hasOrder && r.lockedBy === null);
+    const avail = rests.map((r, i) => ({ r, i })).filter(({ r }) => !r.hasOrder && r.lockedBy === null);
     if (avail.length > 0) {
       const { r, i } = avail[Math.floor(Math.random() * avail.length)];
       r.hasOrder = true;
@@ -91,7 +113,6 @@ function trySpawnOrder(): void {
   scheduleOrder();
 }
 
-// Check delivery timeouts every second
 setInterval(() => {
   const now = Date.now();
   for (const [id, p] of players) {
@@ -114,121 +135,101 @@ io.on('connection', (socket: Socket) => {
     return;
   }
 
-  const color = COLORS[colorIdx % COLORS.length];
-  colorIdx++;
+  // Kick client if no configure arrives within 5 seconds
+  const configureTimeout = setTimeout(() => socket.disconnect(true), 5000);
 
-  const playerIndex = colorIdx - 1;
-  const player: Player = {
-    id: socket.id, color, playerIndex, nickname: 'Player',
-    pos: { x: 0, y: 0, z: 0, heading: 0, speed: 0, steer: 0, isInCar: false },
-    balance: 0, failures: 0, delivery: null,
-  };
-  players.set(socket.id, player);
+  socket.once('player:configure', (data: { nickname?: string; carColor?: string; shirtColor?: string }) => {
+    clearTimeout(configureTimeout);
 
-  socket.on('player:configure', (data: { nickname?: string }) => {
-    const p = players.get(socket.id);
-    if (!p) return;
-    if (typeof data.nickname === 'string') p.nickname = data.nickname.slice(0, 20) || 'Player';
-  });
+    const playerIndex = nextPlayerIndex++;
+    const carColor   = pickColor(data.carColor,   'carColor',   socket.id);
+    const shirtColor = pickColor(data.shirtColor, 'shirtColor', socket.id);
+    const nickname   = (typeof data.nickname === 'string' ? data.nickname.slice(0, 20) : '') || 'Player';
 
-  // Send current state to new player
-  socket.emit('game:welcome', {
-    playerId: socket.id,
-    color,
-    playerIndex,
-    gameState: {
-      players: [...players.values()]
-        .filter(p => p.id !== socket.id)
-        .map(p => ({ id: p.id, color: p.color, ...p.pos })),
-      restaurants: rests.map(r => ({
-        hasOrder: r.hasOrder,
-        orderValue: r.orderValue,
-        lockedBy: r.lockedBy,
-      })),
-      scores: getScores(),
-    },
-  });
-
-  // Notify existing players
-  socket.broadcast.emit('player:joined', { playerId: socket.id, color });
-
-  socket.on('player:position', (data: PosMsg) => {
-    const p = players.get(socket.id);
-    if (p) p.pos = data;
-    socket.broadcast.emit('player:position', { playerId: socket.id, ...data });
-  });
-
-  socket.on('delivery:pickup_request', (data: {
-    restaurantIndex: number;
-    destCx: number; destCz: number;
-    timeLimit: number;
-  }) => {
-    const p = players.get(socket.id);
-    if (!p || p.delivery) {
-      socket.emit('delivery:pickup_denied', { restaurantIndex: data.restaurantIndex });
-      return;
-    }
-
-    const r = rests[data.restaurantIndex];
-    if (!r || !r.hasOrder || r.lockedBy !== null) {
-      socket.emit('delivery:pickup_denied', { restaurantIndex: data.restaurantIndex });
-      return;
-    }
-
-    r.hasOrder = false;
-    r.lockedBy = socket.id;
-
-    p.delivery = {
-      restaurantIndex: data.restaurantIndex,
-      orderValue: r.orderValue,
-      destCx: data.destCx, destCz: data.destCz,
-      timeLimit: data.timeLimit,
-      startedAt: Date.now(),
+    const player: Player = {
+      id: socket.id, carColor, shirtColor, playerIndex, nickname,
+      pos: { x: 0, y: 0, z: 0, heading: 0, speed: 0, steer: 0, isInCar: false },
+      balance: 0, failures: 0, delivery: null,
     };
+    players.set(socket.id, player);
 
-    socket.emit('delivery:pickup_confirmed', {
-      restaurantIndex: data.restaurantIndex,
-      orderValue: r.orderValue,
-      timeLimit: data.timeLimit,
-      destCx: data.destCx, destCz: data.destCz,
-    });
-
-    socket.broadcast.emit('delivery:pickup_locked', {
+    socket.emit('game:welcome', {
       playerId: socket.id,
-      restaurantIndex: data.restaurantIndex,
+      carColor,
+      shirtColor,
+      playerIndex,
+      gameState: {
+        players: [...players.values()]
+          .filter(p => p.id !== socket.id)
+          .map(p => ({ id: p.id, carColor: p.carColor, shirtColor: p.shirtColor, ...p.pos })),
+        restaurants: rests.map(r => ({ hasOrder: r.hasOrder, orderValue: r.orderValue, lockedBy: r.lockedBy })),
+        scores: getScores(),
+      },
     });
-  });
 
-  socket.on('delivery:deliver_request', () => {
-    const p = players.get(socket.id);
-    if (!p || !p.delivery) return;
+    socket.broadcast.emit('player:joined', { playerId: socket.id, carColor, shirtColor, nickname });
 
-    const elapsed = (Date.now() - p.delivery.startedAt) / 1000;
-    if (elapsed > p.delivery.timeLimit + 2) return; // 2s grace for network lag
+    socket.on('player:position', (data: PosMsg) => {
+      const p = players.get(socket.id);
+      if (p) p.pos = data;
+      socket.broadcast.emit('player:position', { playerId: socket.id, ...data });
+    });
 
-    const remaining = Math.max(0, p.delivery.timeLimit - elapsed);
-    const tipFrac = (remaining / p.delivery.timeLimit) * MAX_TIP;
-    const pay = Math.round(p.delivery.orderValue * (BASE_PAY + tipFrac));
+    socket.on('delivery:pickup_request', (data: { restaurantIndex: number; destCx: number; destCz: number; timeLimit: number }) => {
+      const p = players.get(socket.id);
+      if (!p || p.delivery) {
+        socket.emit('delivery:pickup_denied', { restaurantIndex: data.restaurantIndex });
+        return;
+      }
+      const r = rests[data.restaurantIndex];
+      if (!r || !r.hasOrder || r.lockedBy !== null) {
+        socket.emit('delivery:pickup_denied', { restaurantIndex: data.restaurantIndex });
+        return;
+      }
+      r.hasOrder = false;
+      r.lockedBy = socket.id;
+      p.delivery = {
+        restaurantIndex: data.restaurantIndex,
+        orderValue: r.orderValue,
+        destCx: data.destCx, destCz: data.destCz,
+        timeLimit: data.timeLimit,
+        startedAt: Date.now(),
+      };
+      socket.emit('delivery:pickup_confirmed', {
+        restaurantIndex: data.restaurantIndex,
+        orderValue: r.orderValue,
+        timeLimit: data.timeLimit,
+        destCx: data.destCx, destCz: data.destCz,
+      });
+      socket.broadcast.emit('delivery:pickup_locked', { playerId: socket.id, restaurantIndex: data.restaurantIndex });
+    });
 
-    const { restaurantIndex } = p.delivery;
-    rests[restaurantIndex].lockedBy = null;
-    p.delivery = null;
-    p.balance += pay;
-
-    io.emit('delivery:delivered', { playerId: socket.id, pay, scores: getScores() });
+    socket.on('delivery:deliver_request', () => {
+      const p = players.get(socket.id);
+      if (!p || !p.delivery) return;
+      const elapsed = (Date.now() - p.delivery.startedAt) / 1000;
+      if (elapsed > p.delivery.timeLimit + 2) return;
+      const remaining = Math.max(0, p.delivery.timeLimit - elapsed);
+      const tipFrac   = (remaining / p.delivery.timeLimit) * MAX_TIP;
+      const pay       = Math.round(p.delivery.orderValue * (BASE_PAY + tipFrac));
+      const { restaurantIndex } = p.delivery;
+      rests[restaurantIndex].lockedBy = null;
+      p.delivery  = null;
+      p.balance  += pay;
+      io.emit('delivery:delivered', { playerId: socket.id, pay, scores: getScores() });
+    });
   });
 
   socket.on('disconnect', () => {
+    clearTimeout(configureTimeout);
     const p = players.get(socket.id);
-    if (p?.delivery) {
-      rests[p.delivery.restaurantIndex].lockedBy = null;
-    }
+    if (!p) return;
+    if (p.delivery) rests[p.delivery.restaurantIndex].lockedBy = null;
     players.delete(socket.id);
     io.emit('player:left', { playerId: socket.id });
-
     if (players.size === 0) {
       for (const r of rests) { r.hasOrder = false; r.lockedBy = null; }
-      colorIdx = 0;
+      nextPlayerIndex = 0;
     }
   });
 });

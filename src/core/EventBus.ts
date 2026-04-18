@@ -106,16 +106,17 @@ export interface ScoreEntry { color: string; balance: number; failures: number; 
 
 export interface NetWelcomeEvent {
   playerId: string;
-  color: string;
+  carColor: string;
+  shirtColor: string;
   playerIndex: number;
   gameState: {
-    players: Array<{ id: string; color: string; x: number; y: number; z: number; heading: number; speed: number; steer: number; isInCar: boolean }>;
+    players: Array<{ id: string; carColor: string; shirtColor: string; x: number; y: number; z: number; heading: number; speed: number; steer: number; isInCar: boolean }>;
     restaurants: Array<{ hasOrder: boolean; orderValue: number; lockedBy: string | null }>;
     scores: Record<string, ScoreEntry>;
   };
 }
 
-export interface NetPlayerJoinedEvent { playerId: string; color: string; }
+export interface NetPlayerJoinedEvent { playerId: string; carColor: string; shirtColor: string; nickname: string; }
 export interface NetPlayerLeftEvent   { playerId: string; }
 
 export interface NetPlayerPosEvent {

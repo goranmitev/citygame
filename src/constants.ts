@@ -38,7 +38,7 @@ export const CAR_BODY_METALNESS = 0.55;
 export const CAR_ENV_INTENSITY = 1.2; // brighter
 
 // --- Car camera ---
-export const CAR_CAM_DIST = 9;
+export const CAR_CAM_DIST = 5;
 export const CAR_CAM_HEIGHT = 3.5;
 export const CAR_CAM_LERP = 8;
 export const CAR_MOUSE_SENSITIVITY = 0.003;
@@ -60,7 +60,7 @@ export const WALK_PITCH_MIN = -0.4;
 export const WALK_PITCH_MAX = 0.8;
 
 // --- Enter/exit car ---
-export const CAR_ENTER_RADIUS = 8.0;   // increased for larger car (prevents trapping)
+export const CAR_ENTER_RADIUS = 3.5;
 
 // --- Minimap ---
 export const MAP_SIZE = 180;

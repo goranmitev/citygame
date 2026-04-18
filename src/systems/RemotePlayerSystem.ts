@@ -33,7 +33,7 @@ export class RemotePlayerSystem implements GameSystem {
 
   private onWelcome = (data: NetWelcomeEvent): void => {
     for (const p of data.gameState.players) {
-      const r = this.addPlayer(p.id, p.color);
+      const r = this.addPlayer(p.id, p.carColor);
       r.targetPos.set(p.x, p.y, p.z);
       r.displayPos.set(p.x, p.y, p.z);
       r.targetHeading  = p.heading;
@@ -43,7 +43,7 @@ export class RemotePlayerSystem implements GameSystem {
   };
 
   private onJoined = (data: NetPlayerJoinedEvent): void => {
-    this.addPlayer(data.playerId, data.color);
+    this.addPlayer(data.playerId, data.carColor);
   };
 
   private onLeft = (data: NetPlayerLeftEvent): void => {
