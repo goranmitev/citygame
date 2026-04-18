@@ -45,6 +45,7 @@ export class WalkSystem implements GameSystem {
   get isWalking(): boolean { return this.isMoving && !this.driving; }
 
   private driving = false;
+  private exitingCar = false;
   private interactZones = new Map<string, InteractZone>();
 
   private camera!: THREE.PerspectiveCamera;
@@ -175,8 +176,8 @@ export class WalkSystem implements GameSystem {
     const nearestZone = (!this.driving && !nearCar) ? this.getNearestZone() : null;
 
     if (state.interactPressed) {
-      if (this.driving) {
-        this.exitCar();
+      if (this.driving && !this.exitingCar) {
+        this.exitingCar = true;
       } else if (nearCar) {
         this.enterCar();
       } else if (nearestZone) {
@@ -201,6 +202,10 @@ export class WalkSystem implements GameSystem {
 
     if (this.driving) {
       this.sceneSystem.updateShadowTarget(this.car.position.x, this.car.position.z);
+      if (this.exitingCar && this.car.brakeToStop(delta)) {
+        this.exitingCar = false;
+        this.exitCar();
+      }
       this.input.resetDeltas();
       return;
     }

@@ -159,6 +159,16 @@ export class CarSystem implements GameSystem {
     this.steer = 0;
   }
 
+  /** Apply full braking for one frame. Returns true when fully stopped. */
+  brakeToStop(delta: number): boolean {
+    if (this.speed > 0) {
+      this.speed = Math.max(0, this.speed - CAR_BRAKE_FORCE * delta);
+    } else if (this.speed < 0) {
+      this.speed = Math.min(0, this.speed + CAR_BRAKE_FORCE * delta);
+    }
+    return this.speed === 0;
+  }
+
   setSpawn(x: number, y: number, z: number, heading: number): void {
     this.spawnPosition.set(x, y, z);
     this.spawnHeading = heading;

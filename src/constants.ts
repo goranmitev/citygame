@@ -60,7 +60,7 @@ export const WALK_PITCH_MIN = -0.4;
 export const WALK_PITCH_MAX = 0.8;
 
 // --- Enter/exit car ---
-export const CAR_ENTER_RADIUS = 3.5;
+export const CAR_ENTER_RADIUS = 2.5;
 
 // --- Minimap ---
 export const MAP_SIZE = 180;
