@@ -65,6 +65,10 @@ export const Events = {
   NET_PICKUP_LOCKED:    'net:pickup_locked',     // payload: NetPickupLockedEvent
   NET_DELIVERED:        'net:delivered',         // payload: NetDeliveredEvent
   NET_FAILED:           'net:failed',            // payload: NetFailedEvent
+
+  // Car-to-car impact (multiplayer)
+  NET_CAR_IMPACT:       'net:car_impact',        // payload: NetCarImpactEvent  (received hit)
+  NET_SEND_CAR_IMPACT:  'net:send_car_impact',   // payload: NetSendCarImpactEvent (send hit to remote)
 } as const;
 
 export interface CarEnteredEvent {
@@ -143,6 +147,9 @@ export interface NetDeliveredEvent {
   pay: number;
   scores: Record<string, ScoreEntry>;
 }
+
+export interface NetCarImpactEvent     { fromId: string; vx: number; vz: number; }
+export interface NetSendCarImpactEvent { targetId: string; vx: number; vz: number; }
 
 export interface NetFailedEvent {
   playerId: string;

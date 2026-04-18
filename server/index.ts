@@ -204,6 +204,10 @@ io.on('connection', (socket: Socket) => {
       socket.broadcast.emit('delivery:pickup_locked', { playerId: socket.id, restaurantIndex: data.restaurantIndex });
     });
 
+    socket.on('car:impact', (data: { targetId: string; vx: number; vz: number }) => {
+      io.to(data.targetId).emit('car:impact', { fromId: socket.id, vx: data.vx, vz: data.vz });
+    });
+
     socket.on('delivery:deliver_request', () => {
       const p = players.get(socket.id);
       if (!p || !p.delivery) return;

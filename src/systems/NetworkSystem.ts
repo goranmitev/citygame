@@ -3,7 +3,7 @@ import { Game, GameSystem } from '../core/Game';
 import { CarSystem } from './CarSystem';
 import { WalkSystem } from './WalkSystem';
 import { CityBuilder } from '../city/CityBuilder';
-import { EventBus, Events, ScoreEntry } from '../core/EventBus';
+import { EventBus, Events, ScoreEntry, NetSendCarImpactEvent } from '../core/EventBus';
 import { playerOptions } from '../playerOptions';
 import { DELIVERY_RESTAURANT_COUNT, DELIVERY_MAX_FAILURES } from '../constants';
 
@@ -96,6 +96,8 @@ export class NetworkSystem implements GameSystem {
       EventBus.emit(Events.NET_WELCOME, d);
     });
 
+    this.socket.on('car:impact',               (d) => EventBus.emit(Events.NET_CAR_IMPACT,    d));
+    EventBus.on<NetSendCarImpactEvent>(Events.NET_SEND_CAR_IMPACT, this.sendCarImpact);
     this.socket.on('player:joined',            (d) => EventBus.emit(Events.NET_PLAYER_JOINED, d));
     this.socket.on('player:left',              (d) => EventBus.emit(Events.NET_PLAYER_LEFT,   d));
     this.socket.on('player:position',          (d) => EventBus.emit(Events.NET_PLAYER_POS,    d));
@@ -159,7 +161,14 @@ export class NetworkSystem implements GameSystem {
     this.socket.emit('delivery:deliver_request');
   }
 
+  sendCarImpact = (data: NetSendCarImpactEvent): void => {
+    if (!this.spMode && this.connected) {
+      this.socket.emit('car:impact', { targetId: data.targetId, vx: data.vx, vz: data.vz });
+    }
+  };
+
   dispose(): void {
+    EventBus.off(Events.NET_SEND_CAR_IMPACT, this.sendCarImpact);
     if (this.connected) this.socket.disconnect();
   }
 

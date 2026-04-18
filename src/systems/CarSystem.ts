@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Game, GameSystem } from '../core/Game';
-import { EventBus, Events, CarHitEvent } from '../core/EventBus';
+import { EventBus, Events, CarHitEvent, NetCarImpactEvent, NetSendCarImpactEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
 import { SceneSystem } from './SceneSystem';
+import { RemotePlayerSystem } from './RemotePlayerSystem';
 import {
   CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
   CAR_MAX_SPEED_FWD, CAR_MAX_SPEED_REV,
@@ -40,6 +41,7 @@ export class CarSystem implements GameSystem {
   private sceneSystem!: SceneSystem;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
+  private game!: Game;
 
   private carGroup!: THREE.Group;
   private wheelPivots: THREE.Group[] = [];
@@ -78,6 +80,8 @@ export class CarSystem implements GameSystem {
   private spawnHeading = 0;
 
   private wallHitCooldown = 0;
+  private remoteHitCooldowns = new Map<string, number>();
+  private _remoteHitThisFrame: { id: string; px: number; pz: number } | null = null;
 
   // Sidewalk segments — used for Y adjustment when driving over curbs
   private sidewalks: StreetSegment[] = [];
@@ -87,6 +91,7 @@ export class CarSystem implements GameSystem {
   private boundsMax = new THREE.Vector2(Infinity, Infinity);
 
   init(game: Game): void {
+    this.game = game;
     this.camera = game.camera;
     this.input = game.getSystem<InputSystem>('input')!;
     this.sceneSystem = game.getSystem<SceneSystem>('scene')!;
@@ -97,9 +102,9 @@ export class CarSystem implements GameSystem {
     this.gltfLoader.setDRACOLoader(dracoLoader);
     this.loadCarModel();  // async load Meshy model (falls back to procedural if fails)
 
-    // React to enter/exit events emitted by WalkSystem
-    EventBus.on(Events.CAR_ENTERED, this.onEntered);
-    EventBus.on(Events.CAR_EXITED, this.onExited);
+    EventBus.on(Events.CAR_ENTERED,       this.onEntered);
+    EventBus.on(Events.CAR_EXITED,        this.onExited);
+    EventBus.on(Events.NET_CAR_IMPACT,    this.onRemoteImpact);
   }
 
   get currentSpeed(): number { return this.speed; }
@@ -151,6 +156,14 @@ export class CarSystem implements GameSystem {
       new THREE.Vector3(Math.min(...xs), 0,          Math.min(...zs)),
       new THREE.Vector3(Math.max(...xs), CAR_HEIGHT, Math.max(...zs)),
     );
+  }
+
+  /** Apply an XZ impulse from a remote car collision. */
+  applyImpulse(vx: number, vz: number): void {
+    const fwdX = Math.sin(this.heading);
+    const fwdZ = Math.cos(this.heading);
+    const proj = vx * fwdX + vz * fwdZ;
+    this.speed = Math.max(-CAR_MAX_SPEED_REV, Math.min(CAR_MAX_SPEED_FWD, this.speed + proj * 0.8));
   }
 
   /** Bring the car to an immediate stop. */
@@ -238,8 +251,9 @@ export class CarSystem implements GameSystem {
   }
 
   dispose(): void {
-    EventBus.off(Events.CAR_ENTERED, this.onEntered);
-    EventBus.off(Events.CAR_EXITED, this.onExited);
+    EventBus.off(Events.CAR_ENTERED,    this.onEntered);
+    EventBus.off(Events.CAR_EXITED,     this.onExited);
+    EventBus.off(Events.NET_CAR_IMPACT, this.onRemoteImpact);
 
     // Dispose all geometries and materials in the car group
     this.carGroup.traverse((obj) => {
@@ -267,6 +281,14 @@ export class CarSystem implements GameSystem {
   private onExited = (): void => {
     this.isOccupied = false;
     this.stop();
+  };
+
+  private onRemoteImpact = (data: NetCarImpactEvent): void => {
+    this.applyImpulse(data.vx, data.vz);
+    if (this.wallHitCooldown === 0) {
+      EventBus.emit<CarHitEvent>(Events.CAR_HIT_WALL, { speed: Math.hypot(data.vx, data.vz) });
+      this.wallHitCooldown = 0.4;
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -314,29 +336,52 @@ export class CarSystem implements GameSystem {
     const dx = sinH * this.speed * delta;
     const dz = cosH * this.speed * delta;
 
+    this._remoteHitThisFrame = null;
     const blockedX = !this.tryMove(dx, 0);
     const blockedZ = !this.tryMove(0, dz);
 
-    if (blockedX || blockedZ) {
+    // Tick remote hit cooldowns
+    for (const [id, t] of this.remoteHitCooldowns) {
+      const remaining = t - delta;
+      if (remaining <= 0) this.remoteHitCooldowns.delete(id);
+      else this.remoteHitCooldowns.set(id, remaining);
+    }
+
+    const remoteHit = this._remoteHitThisFrame;
+    if (remoteHit) {
+      const { id, px, pz } = remoteHit;
+      if (!(this.remoteHitCooldowns.get(id) ?? 0)) {
+        const nx = this.position.x - px;
+        const nz = this.position.z - pz;
+        const len = Math.sqrt(nx * nx + nz * nz) || 1;
+        const preSpeed = Math.abs(this.speed);
+        this.speed *= -0.3;
+        const impulseMag = preSpeed * 0.5;
+        EventBus.emit<NetSendCarImpactEvent>(Events.NET_SEND_CAR_IMPACT, {
+          targetId: id, vx: (nx / len) * impulseMag, vz: (nz / len) * impulseMag,
+        });
+        this.remoteHitCooldowns.set(id, 0.5);
+        if (this.wallHitCooldown === 0) {
+          EventBus.emit<CarHitEvent>(Events.CAR_HIT_WALL, { speed: preSpeed });
+          this.wallHitCooldown = 0.4;
+        }
+      }
+    } else if (blockedX || blockedZ) {
       if (this.wallHitCooldown === 0) {
         EventBus.emit<CarHitEvent>(Events.CAR_HIT_WALL, { speed: Math.abs(this.speed) });
         this.wallHitCooldown = 0.4;
       }
-    }
-
-    if (blockedX && blockedZ) {
-      // Head-on hit — bounce back hard
-      this.speed *= -0.3;
-    } else if (blockedX) {
-      // Wall perpendicular to X — auto-steer to align along Z
-      const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
-      this.heading -= correction;
-      this.speed *= 0.97;
-    } else if (blockedZ) {
-      // Wall perpendicular to Z — auto-steer to align along X
-      const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
-      this.heading += correction;
-      this.speed *= 0.97;
+      if (blockedX && blockedZ) {
+        this.speed *= -0.3;
+      } else if (blockedX) {
+        const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
+        this.heading -= correction;
+        this.speed *= 0.97;
+      } else if (blockedZ) {
+        const correction = Math.sin(this.heading) * Math.cos(this.heading) * 8.0 * delta;
+        this.heading += correction;
+        this.speed *= 0.97;
+      }
     }
   }
 
@@ -355,8 +400,18 @@ export class CarSystem implements GameSystem {
     this._tryBox.max.set(nx + hwX, CAR_HEIGHT, nz + hwZ);
 
     for (const box of this.colliders) {
-      if (this._tryBox.intersectsBox(box)) {
-        return false;
+      if (this._tryBox.intersectsBox(box)) return false;
+    }
+
+    const remotes = this.game.getSystem<RemotePlayerSystem>('remote');
+    if (remotes) {
+      for (const rc of remotes.getCarColliders()) {
+        if (this._tryBox.intersectsBox(rc.box)) {
+          if (!this._remoteHitThisFrame) {
+            this._remoteHitThisFrame = { id: rc.id, px: rc.pos.x, pz: rc.pos.z };
+          }
+          return false;
+        }
       }
     }
 
