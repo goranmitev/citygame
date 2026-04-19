@@ -144,6 +144,67 @@ export class TrafficSystem implements GameSystem {
         this.intersections.push(intersection);
       }
     }
+
+    // --- Street sign poles + blades (knockable, one per intersection corner) ---
+    const POLE_H = 5.5;
+    const SIGN_W = 2.8;
+    const SIGN_H = 0.65;
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x3a6b3a, roughness: 0.7, metalness: 0.2 });
+
+    const signTexCache = new Map<string, THREE.CanvasTexture>();
+    const getSignTex = (label: string): THREE.CanvasTexture => {
+      if (signTexCache.has(label)) return signTexCache.get(label)!;
+      const CW = 512, CH = 128;
+      const canvas = document.createElement('canvas');
+      canvas.width = CW; canvas.height = CH;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#1a5c2a';
+      ctx.fillRect(0, 0, CW, CH);
+      const B = 8;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = B;
+      ctx.strokeRect(B / 2, B / 2, CW - B, CH - B);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 56px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, CW / 2, CH / 2);
+      const tex = new THREE.CanvasTexture(canvas);
+      signTexCache.set(label, tex);
+      return tex;
+    };
+
+    const addBlade = (group: THREE.Group, label: string, y: number, rotY: number) => {
+      const mat = new THREE.MeshStandardMaterial({ map: getSignTex(label), roughness: 0.6, metalness: 0.1 });
+      for (const r of [rotY, rotY + Math.PI]) {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(SIGN_W, SIGN_H), mat);
+        mesh.rotation.y = r;
+        mesh.position.y = y;
+        group.add(mesh);
+      }
+    };
+
+    for (const ix of layout.intersections) {
+      const group = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, POLE_H, 6), poleMat);
+      pole.position.y = POLE_H / 2;
+      pole.castShadow = true;
+      group.add(pole);
+      addBlade(group, layout.hStreetNames[ix.hIdx], POLE_H - SIGN_H * 0.6, 0);
+      addBlade(group, layout.vStreetNames[ix.vIdx], POLE_H + SIGN_H * 0.6, Math.PI / 2);
+      group.position.set(ix.px, 0, ix.pz);
+      this.scene.add(group);
+      this.knockables.push({
+        group,
+        baseX: ix.px,
+        baseZ: ix.pz,
+        state: 'standing',
+        vel: new THREE.Vector3(),
+        angularVel: new THREE.Vector3(),
+        originY: 0,
+        opacity: 1,
+      });
+    }
   }
 
   update(delta: number): void {

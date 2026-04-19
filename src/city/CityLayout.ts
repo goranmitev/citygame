@@ -27,12 +27,41 @@ export interface StreetSegment {
   depth: number;
 }
 
+export interface IntersectionDef {
+  px: number;   // world X of sign post (center of NW corner sidewalk tile)
+  pz: number;   // world Z of sign post
+  vIdx: number; // index into vStreetNames
+  hIdx: number; // index into hStreetNames
+}
+
 export interface CityLayoutData {
   blocks: BlockDef[];
   streets: StreetSegment[];
   sidewalks: StreetSegment[];
   totalWidth: number;
   totalDepth: number;
+  vStreetNames: string[];
+  hStreetNames: string[];
+  intersections: IntersectionDef[];
+}
+
+const STREET_WORDS = [
+  'Main', 'Oak', 'Maple', 'Cedar', 'Pine', 'Elm', 'River', 'Hill',
+  'Park', 'Lake', 'Church', 'Market', 'Bridge', 'High', 'Crown',
+  'Central', 'Union', 'Mill', 'Spring', 'Forest', 'Sunset',
+  'Lincoln', 'Washington', 'Jefferson', 'Madison', 'Monroe', 'Franklin',
+];
+const STREET_SUFFIXES = ['St', 'Ave', 'Blvd', 'Dr', 'Ln', 'Pl', 'Way', 'Rd'];
+
+function generateStreetNames(rng: () => number, count: number): string[] {
+  const pool = [...STREET_WORDS];
+  const names: string[] = [];
+  for (let i = 0; i < count; i++) {
+    if (pool.length === 0) { names.push(`${i + 1}th St`); continue; }
+    const word = pool.splice(Math.floor(rng() * pool.length), 1)[0];
+    names.push(`${word} ${STREET_SUFFIXES[Math.floor(rng() * STREET_SUFFIXES.length)]}`);
+  }
+  return names;
 }
 
 /**
@@ -236,7 +265,25 @@ export function generateCityLayout(
     }
   }
 
-  return { blocks, streets, sidewalks, totalWidth, totalDepth };
+  const vStreetNames = generateStreetNames(rng, gridX - 1);
+  const hStreetNames = generateStreetNames(rng, gridZ - 1);
+
+  const intersections: IntersectionDef[] = [];
+  for (let i = 0; i < gridX - 1; i++) {
+    for (let j = 0; j < gridZ - 1; j++) {
+      const vSide = vSidewalkW[i];
+      const hSide = hSidewalkW[j];
+      if (vSide <= 0 || hSide <= 0) continue;
+      intersections.push({
+        px: vStreetStarts[i] + vSide * 0.25,
+        pz: hStreetStarts[j] + hSide * 0.25,
+        vIdx: i,
+        hIdx: j,
+      });
+    }
+  }
+
+  return { blocks, streets, sidewalks, totalWidth, totalDepth, vStreetNames, hStreetNames, intersections };
 }
 
 /**
