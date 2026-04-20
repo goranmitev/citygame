@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { texture as texNode, uv, fract, vec2 } from 'three/tsl';
 import { PlotDef } from './CityLayout';
 import { createRNG, randRange } from '../utils/random';
 
@@ -36,36 +38,18 @@ export function createBuckets(): GeometryBuckets {
   };
 }
 
-/** Create an atlas-tiling material. UVs are world-scaled; the shader does
- *  per-pixel fract() to tile within the correct atlas quadrant. */
+/** Create an atlas-tiling material. UVs are world-scaled; fract() tiles within the correct atlas quadrant. */
 export function makeAtlasMaterial(
   baseMap: THREE.Texture,
   tileX: number,
   tileY: number,
   roughness: number,
-): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ map: baseMap, roughness });
-  const atlasOffset = new THREE.Vector2(tileX / ATLAS_TILES, tileY / ATLAS_TILES);
-  const atlasScale = new THREE.Vector2(1 / ATLAS_TILES, 1 / ATLAS_TILES);
+): MeshStandardNodeMaterial {
+  const scale = 1 / ATLAS_TILES;
+  const tiledUv = fract(uv()).mul(scale).add(vec2(tileX / ATLAS_TILES, tileY / ATLAS_TILES));
 
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.atlasOffset = { value: atlasOffset };
-    shader.uniforms.atlasScale = { value: atlasScale };
-    shader.fragmentShader =
-      'uniform vec2 atlasOffset;\nuniform vec2 atlasScale;\n' +
-      shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        `#ifdef USE_MAP
-  vec2 tiledUv = atlasOffset + fract(vMapUv) * atlasScale;
-  vec4 sampledDiffuseColor = texture2D(map, tiledUv);
-  #ifdef DECODE_VIDEO_TEXTURE
-    sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
-  #endif
-  diffuseColor *= sampledDiffuseColor;
-#endif`,
-      );
-  };
-
+  const mat = new MeshStandardNodeMaterial({ roughness });
+  mat.colorNode = texNode(baseMap, tiledUv);
   return mat;
 }
 
@@ -81,9 +65,9 @@ function createMaterials() {
   wallMap.wrapS = wallMap.wrapT = THREE.ClampToEdgeWrapping;
   roofMap.wrapS = roofMap.wrapT = THREE.ClampToEdgeWrapping;
 
-  const wallMaterials: THREE.MeshStandardMaterial[] = [];
-  const groundFloorMaterials: THREE.MeshStandardMaterial[] = [];
-  const roofMaterials: THREE.MeshStandardMaterial[] = [];
+  const wallMaterials: THREE.Material[] = [];
+  const groundFloorMaterials: THREE.Material[] = [];
+  const roofMaterials: THREE.Material[] = [];
 
   for (let tile = 0; tile < ATLAS_TILE_COUNT; tile++) {
     const tileX = tile % ATLAS_TILES;

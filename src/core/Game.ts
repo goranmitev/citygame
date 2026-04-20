@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { WebGPURenderer, RenderPipeline } from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { EventBus, Events } from './EventBus';
 
 export interface GameSystem {
@@ -14,13 +14,12 @@ export interface GameSystem {
 export class Game {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
-  readonly renderer: THREE.WebGLRenderer;
-  readonly composer: EffectComposer;
+  readonly renderer: WebGPURenderer;
+  readonly postProcessing: RenderPipeline;
   private timer = new THREE.Timer();
 
   private systems: GameSystem[] = [];
   private running = false;
-  private animFrameId = 0;
 
   constructor(canvas?: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
@@ -30,11 +29,10 @@ export class Game {
       0.1,
       400,
     );
-    this.renderer = new THREE.WebGLRenderer({
+    this.renderer = new WebGPURenderer({
       canvas,
       antialias: true,
       powerPreference: 'high-performance',
-      stencil: false,
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -43,17 +41,12 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
-    // Post-processing pipeline
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    const scenePass = pass(this.scene, this.camera);
+    const sceneColor = scenePass.getTextureNode();
+    const bloomEffect = bloom(sceneColor, 0.3, 0.4, 0.85);
 
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.3,   // strength — subtle glow
-      0.4,   // radius
-      0.85,  // threshold — only bright areas bloom
-    );
-    this.composer.addPass(bloom);
+    this.postProcessing = new RenderPipeline(this.renderer);
+    this.postProcessing.outputNode = sceneColor.add(bloomEffect);
 
     if (!canvas) {
       document.body.appendChild(this.renderer.domElement);
@@ -75,12 +68,14 @@ export class Game {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.loop();
+    void this.renderer.init().then(() => {
+      if (this.running) this.renderer.setAnimationLoop(this.loop);
+    });
   }
 
   stop(): void {
     this.running = false;
-    cancelAnimationFrame(this.animFrameId);
+    this.renderer.setAnimationLoop(null);
   }
 
   /**
@@ -124,24 +119,20 @@ export class Game {
   }
 
   private loop = (): void => {
-    if (!this.running) return;
-    this.animFrameId = requestAnimationFrame(this.loop);
-
     this.timer.update();
-    const delta = Math.min(this.timer.getDelta(), 0.1); // cap at 100ms
+    const delta = Math.min(this.timer.getDelta(), 0.1);
     const elapsed = this.timer.getElapsed();
 
     for (const system of this.systems) {
       system.update?.(delta, elapsed);
     }
 
-    this.composer.render();
+    this.postProcessing.render();
   };
 
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.composer.setSize(window.innerWidth, window.innerHeight);
   };
 }
