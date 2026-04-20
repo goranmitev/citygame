@@ -190,8 +190,8 @@ export class TrafficSystem implements GameSystem {
       pole.position.y = POLE_H / 2;
       pole.castShadow = true;
       group.add(pole);
-      addBlade(group, layout.hStreetNames[ix.hIdx], POLE_H - SIGN_H * 0.6, 0);
-      addBlade(group, layout.vStreetNames[ix.vIdx], POLE_H + SIGN_H * 0.6, Math.PI / 2);
+      addBlade(group, layout.hStreetNames[ix.hIdx], POLE_H + SIGN_H * 0.5, 0);
+      addBlade(group, layout.vStreetNames[ix.vIdx], POLE_H + SIGN_H * 1.5 + 0.05, Math.PI / 2);
       group.position.set(ix.px, 0, ix.pz);
       this.scene.add(group);
       this.knockables.push({
