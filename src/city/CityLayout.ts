@@ -79,8 +79,8 @@ export function generateCityLayout(
   const rng = createRNG(seed);
 
   const ROAD_FRACTION = 0.65; // road takes ~65% of street width
-  const MIN_BLOCK_SIZE = 40;
-  const MAX_BLOCK_SIZE = 90;
+  const MIN_BLOCK_SIZE = 90;
+  const MAX_BLOCK_SIZE = 100;
   const PLOT_MARGIN = 0.5;
   const MIN_PLOT_WIDTH = 6;
   const MAX_PLOT_WIDTH = 16;
