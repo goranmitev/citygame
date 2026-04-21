@@ -23,12 +23,10 @@ import {
   CAR_MOUSE_SENSITIVITY, CAR_PITCH_MIN, CAR_PITCH_MAX,
   CAR_MODEL_SCALE, CAR_GROUND_CLEARANCE,
   CAR_BODY_ROUGHNESS, CAR_BODY_METALNESS, CAR_ENV_INTENSITY,
+  SIDEWALK_HEIGHT, SIDEWALK_Y_LERP,
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
 import { playerOptions } from '../playerOptions';
-
-const SIDEWALK_HEIGHT = 0.15;
-const SIDEWALK_Y_LERP = 10;
 
 const _camHit = new THREE.Vector3();
 const DEBUG_CAR_COLLIDER = false;

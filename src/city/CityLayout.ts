@@ -1,4 +1,5 @@
 import { createRNG, randRange, randInt } from '../utils/random';
+import { ROAD_FRACTION, MIN_BLOCK_SIZE, MAX_BLOCK_SIZE, PLOT_MARGIN, MIN_PLOT_WIDTH, MAX_PLOT_WIDTH } from '../constants';
 
 export interface BlockDef {
   /** Block bounding box in world coords (x, z) */
@@ -77,13 +78,6 @@ export function generateCityLayout(
   seed = 42,
 ): CityLayoutData {
   const rng = createRNG(seed);
-
-  const ROAD_FRACTION = 0.65; // road takes ~65% of street width
-  const MIN_BLOCK_SIZE = 90;
-  const MAX_BLOCK_SIZE = 100;
-  const PLOT_MARGIN = 0.5;
-  const MIN_PLOT_WIDTH = 6;
-  const MAX_PLOT_WIDTH = 16;
 
   // Each street gets its own width. Road occupies ROAD_FRACTION of total width.
   // Lane width ~3.5 units → 2 lanes: 8–12, 3 lanes: 12–16

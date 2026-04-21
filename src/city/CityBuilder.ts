@@ -6,6 +6,10 @@ import { CarSystem } from '../systems/CarSystem';
 import { PedestrianSystem } from '../systems/PedestrianSystem';
 import { generateCityLayout, CityLayoutData } from './CityLayout';
 import { ATLAS_TILE_COUNT, createBuckets, pushBuilding, getMaterials, makeAtlasMaterial, UV_WORLD_SCALE } from './BuildingFactory';
+import {
+  SIDEWALK_HEIGHT, CITY_WALL_HEIGHT, CITY_WALL_THICK,
+  ZEBRA_STRIPE_W, ZEBRA_STRIPE_GAP, ZEBRA_N_STRIPES, ZEBRA_Y,
+} from '../constants';
 import { buildPark, getParkMaterials, mergeParkGeos } from './ParkFactory';
 
 /**
@@ -239,10 +243,10 @@ export class CityBuilder implements GameSystem {
 
   private createZebraCrossings(scene: THREE.Scene): void {
     const stripeGeos: THREE.BufferGeometry[] = [];
-    const STRIPE_W = 0.5;
-    const STRIPE_GAP = 0.45;
-    const N_STRIPES = 4;
-    const Y = 0.025; // above road (0.01) and center-line dashes (0.02)
+    const STRIPE_W = ZEBRA_STRIPE_W;
+    const STRIPE_GAP = ZEBRA_STRIPE_GAP;
+    const N_STRIPES = ZEBRA_N_STRIPES;
+    const Y = ZEBRA_Y;
 
     const hStreets = this.layout.streets.filter(s => s.width > s.depth);
     const vStreets = this.layout.streets.filter(s => s.depth >= s.width);
@@ -311,8 +315,8 @@ export class CityBuilder implements GameSystem {
 
   /** Place a continuous perimeter wall around the entire city. */
   private createDeadEndWalls(scene: THREE.Scene): void {
-    const WALL_HEIGHT = 3.3;
-    const WALL_THICK = 1.5;
+    const WALL_HEIGHT = CITY_WALL_HEIGHT;
+    const WALL_THICK = CITY_WALL_THICK;
     const geos: THREE.BufferGeometry[] = [];
     const { totalWidth, totalDepth } = this.layout;
 
@@ -395,7 +399,7 @@ export class CityBuilder implements GameSystem {
 
   private createSidewalks(scene: THREE.Scene): void {
     const geos: THREE.BufferGeometry[] = [];
-    const height = 0.15;
+    const height = SIDEWALK_HEIGHT;
 
     for (const sw of this.layout.sidewalks) {
       const geo = new THREE.BoxGeometry(sw.width, height, sw.depth);

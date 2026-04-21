@@ -10,11 +10,61 @@ export const CITY_SEED = 42;
 export const CITY_CENTRE_X = 350;
 export const CITY_CENTRE_Z = 350;
 
+// --- City layout ---
+export const ROAD_FRACTION = 0.65;      // road takes ~65% of street width
+export const MIN_BLOCK_SIZE = 90;
+export const MAX_BLOCK_SIZE = 100;
+export const PLOT_MARGIN = 0.5;
+export const MIN_PLOT_WIDTH = 6;
+export const MAX_PLOT_WIDTH = 16;
+
+// --- City walls (perimeter) ---
+export const CITY_WALL_HEIGHT = 3.3;
+export const CITY_WALL_THICK = 1.5;
+
+// --- Zebra crossings ---
+export const ZEBRA_STRIPE_W = 0.5;
+export const ZEBRA_STRIPE_GAP = 0.45;
+export const ZEBRA_N_STRIPES = 4;
+export const ZEBRA_Y = 0.025;           // above road to avoid z-fighting
+
+// --- Sidewalks ---
+export const SIDEWALK_HEIGHT = 0.15;
+export const SIDEWALK_Y_LERP = 10;
+
+// --- Buildings ---
+export const FLOOR_HEIGHT = 3.2;
+export const WINDOW_COLOR = 0x8ec8e8;
+export const WINDOW_FRAME_COLOR = 0xf5f0e8;
+
 // --- City colors ---
 export const ROAD_COLOR = 0x6b6b6b;
 export const SIDEWALK_COLOR = 0x999990;
 export const GROUND_COLOR = 0x4a5a3a;
 export const MARKING_COLOR = 0xccccaa;
+
+// --- Scene / lighting ---
+export const SKY_COLOR = 0x87ceeb;
+export const FOG_COLOR = 0xc8dce8;
+export const FOG_NEAR = 80;
+export const FOG_FAR = 300;
+export const SUN_COLOR = 0xfff5e6;
+export const SUN_INTENSITY = 1.2;
+export const HEMI_INTENSITY = 1.2;
+export const AMBIENT_INTENSITY = 0.5;
+export const SHADOW_CAMERA_SIZE = 150;
+export const SHADOW_MAP_SIZE = 2048;
+
+// --- Camera / renderer ---
+export const CAMERA_FOV = 75;
+export const CAMERA_NEAR = 0.1;
+export const CAMERA_FAR = 400;
+export const MAX_PIXEL_RATIO = 2;
+export const TONE_MAPPING_EXPOSURE = 1.0;
+export const BLOOM_STRENGTH = 0.3;
+export const BLOOM_THRESHOLD = 0.4;
+export const BLOOM_SMOOTHING = 0.85;
+export const MAX_DELTA = 0.1;
 
 // --- Car physics (scaled for Meshy model; 20% smaller visual per request) ---
 export const CAR_HALF_W = 4.0;         // half-width for collision

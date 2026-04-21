@@ -3,14 +3,11 @@ import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { texture as texNode, uv, fract, vec2 } from 'three/tsl';
 import { PlotDef } from './CityLayout';
 import { createRNG, randRange } from '../utils/random';
+import { FLOOR_HEIGHT, WINDOW_COLOR, WINDOW_FRAME_COLOR } from '../constants';
 
-const FLOOR_HEIGHT = 3.2;
 const ATLAS_TILES = 4; // 4x4 atlas
 export const ATLAS_TILE_COUNT = ATLAS_TILES * ATLAS_TILES;
 export const UV_WORLD_SCALE = 4.0;
-
-const WINDOW_COLOR = 0x8ec8e8;
-const WINDOW_FRAME_COLOR = 0xf5f0e8;
 
 /**
  * Geometry buckets keyed by material name.

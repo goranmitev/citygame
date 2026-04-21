@@ -3,6 +3,12 @@ import { WebGPURenderer, RenderPipeline } from 'three/webgpu';
 import { pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { EventBus, Events } from './EventBus';
+import {
+  CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR,
+  MAX_PIXEL_RATIO, TONE_MAPPING_EXPOSURE,
+  BLOOM_STRENGTH, BLOOM_THRESHOLD, BLOOM_SMOOTHING,
+  MAX_DELTA,
+} from '../constants';
 
 export interface GameSystem {
   readonly name: string;
@@ -24,10 +30,10 @@ export class Game {
   constructor(canvas?: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
-      75,
+      CAMERA_FOV,
       window.innerWidth / window.innerHeight,
-      0.1,
-      400,
+      CAMERA_NEAR,
+      CAMERA_FAR,
     );
     this.renderer = new WebGPURenderer({
       canvas,
@@ -35,15 +41,15 @@ export class Game {
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = TONE_MAPPING_EXPOSURE;
 
     const scenePass = pass(this.scene, this.camera);
     const sceneColor = scenePass.getTextureNode();
-    const bloomEffect = bloom(sceneColor, 0.3, 0.4, 0.85);
+    const bloomEffect = bloom(sceneColor, BLOOM_STRENGTH, BLOOM_THRESHOLD, BLOOM_SMOOTHING);
 
     this.postProcessing = new RenderPipeline(this.renderer);
     this.postProcessing.outputNode = sceneColor.add(bloomEffect);
@@ -120,7 +126,7 @@ export class Game {
 
   private loop = (): void => {
     this.timer.update();
-    const delta = Math.min(this.timer.getDelta(), 0.1);
+    const delta = Math.min(this.timer.getDelta(), MAX_DELTA);
     const elapsed = this.timer.getElapsed();
 
     for (const system of this.systems) {
