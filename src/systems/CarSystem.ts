@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events, CarHitEvent, NetCarImpactEvent, NetSendCarImpactEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -27,6 +26,7 @@ import {
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
 import { playerOptions } from '../playerOptions';
+import { GAME_ASSETS, loadGameGltf } from '../assets/AssetPreloader';
 
 const _camHit = new THREE.Vector3();
 const DEBUG_CAR_COLLIDER = false;
@@ -53,8 +53,8 @@ export class CarSystem implements GameSystem {
   private carGroup!: THREE.Group;
   private wheelPivots: THREE.Group[] = [];
   private _wheelAngle = 0;
-  private gltfLoader!: GLTFLoader;
   private modelLoaded = false;
+  private ownsCarGeometry = false;
   private suspensionOffset = 0;
   private carYOffset = 0; // computed from bounding box to prevent floating/sinking
 
@@ -108,10 +108,6 @@ export class CarSystem implements GameSystem {
       this.debugHelper = createCarDebugHelper(DEBUG_CAR_COLLIDER_COLOR);
       this.scene.add(this.debugHelper);
     }
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('/draco/');
-    this.gltfLoader = new GLTFLoader();
-    this.gltfLoader.setDRACOLoader(dracoLoader);
     this.loadCarModel();  // async load Meshy model (falls back to procedural if fails)
 
     EventBus.on(Events.CAR_ENTERED,       this.onEntered);
@@ -121,6 +117,22 @@ export class CarSystem implements GameSystem {
 
   get currentSpeed(): number { return this.speed; }
   get currentSteer(): number { return this.steer; }
+
+  applyPlayerColor(): void {
+    if (!this.carGroup) return;
+
+    const color = new THREE.Color(playerOptions.carColor);
+    this.carGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of materials) {
+          if ('color' in mat && mat.color instanceof THREE.Color) {
+            mat.color.copy(color);
+          }
+        }
+      }
+    });
+  }
 
   /** Speed in km/h (always positive). */
   getSpeedKmh(): number {
@@ -267,9 +279,9 @@ export class CarSystem implements GameSystem {
     EventBus.off(Events.NET_CAR_IMPACT, this.onRemoteImpact);
 
     // Dispose all geometries and materials in the car group
-    this.carGroup.traverse((obj) => {
+    this.carGroup?.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
+        if (this.ownsCarGeometry) obj.geometry.dispose();
         if (Array.isArray(obj.material)) {
           obj.material.forEach((m) => m.dispose());
         } else {
@@ -277,7 +289,7 @@ export class CarSystem implements GameSystem {
         }
       }
     });
-    this.scene.remove(this.carGroup);
+    if (this.carGroup) this.scene.remove(this.carGroup);
     if (this.debugHelper) {
       this.scene.remove(this.debugHelper);
       this.debugHelper.geometry.dispose();
@@ -553,22 +565,16 @@ export class CarSystem implements GameSystem {
   private async loadCarModel(): Promise<void> {
     try {
       console.log('Loading Meshy-generated car model...');
-      const gltf = await new Promise<any>((resolve, reject) => {
-        this.gltfLoader.load(
-          '/assets/models/car_optimized.glb',
-          resolve,
-          (progress) => console.log('Load progress:', (progress.loaded / progress.total * 100).toFixed(1) + '%'),
-          reject
-        );
-      });
+      const gltf = await loadGameGltf(GAME_ASSETS.carModel);
 
       // Wrap the model so carGroup owns heading (Y) and the model keeps its fixed orientation
-      const model = gltf.scene;
+      const model = skeletonClone(gltf.scene) as THREE.Group;
       model.scale.setScalar(CAR_MODEL_SCALE);
       model.rotation.y = Math.PI / 2; // GLB natural front is -X; rotate to face +Z (physics forward)
 
       this.carGroup = new THREE.Group();
       this.carGroup.add(model);
+      this.ownsCarGeometry = false;
 
       // Enable shadows on all meshes + refined materials (less shiny, brighter per request)
       this.carGroup.traverse((child: THREE.Object3D) => {
@@ -577,7 +583,7 @@ export class CarSystem implements GameSystem {
           child.receiveShadow = true;
           // Ensure PBR materials from Meshy are configured for scene lighting
           if (child.material) {
-            const mat = child.material as THREE.MeshStandardMaterial;
+            const mat = (child.material as THREE.MeshStandardMaterial).clone();
             if (mat.map) mat.map.needsUpdate = true;
             mat.roughness = CAR_BODY_ROUGHNESS;
             mat.metalness = CAR_BODY_METALNESS;
@@ -585,9 +591,11 @@ export class CarSystem implements GameSystem {
             mat.emissive = new THREE.Color(0x111111);
             mat.emissiveIntensity = 0.3;
             mat.color = new THREE.Color(playerOptions.carColor);
+            child.material = mat;
           }
         }
       });
+      this.applyPlayerColor();
 
       // Calculate exact Y offset and collision extents from actual model bounding box
       const box = new THREE.Box3().setFromObject(this.carGroup);
@@ -623,6 +631,7 @@ export class CarSystem implements GameSystem {
 
   private buildCarMesh(): void {
     this.carGroup = new THREE.Group();
+    this.ownsCarGeometry = true;
 
     const bodyMat = new THREE.MeshStandardMaterial({ color: playerOptions.carColor, roughness: 0.4, metalness: 0.5 });
     const bodyGeo = new THREE.BoxGeometry(1.8, 0.55, 4.0);

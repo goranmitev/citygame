@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Game, GameSystem } from '../core/Game';
 import {
@@ -14,6 +12,7 @@ import {
   CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
 } from '../constants';
 import { createCarDebugHelper } from '../utils/carCollider';
+import { GAME_ASSETS, loadFreshGameGltf, loadGameGltf } from '../assets/AssetPreloader';
 
 interface RemotePlayer {
   targetPos:      THREE.Vector3;
@@ -58,48 +57,37 @@ export class RemotePlayerSystem implements GameSystem {
   init(game: Game): void {
     this.scene = game.scene;
 
-    const draco = new DRACOLoader();
-    draco.setDecoderPath('/draco/');
-    const loader = new GLTFLoader();
-    loader.setDRACOLoader(draco);
+    const carPromise = loadGameGltf(GAME_ASSETS.carModel).then((gltf) => {
+      const model = skeletonClone(gltf.scene) as THREE.Group;
+      model.scale.setScalar(CAR_MODEL_SCALE);
+      model.rotation.y = Math.PI / 2;
 
-    const carPromise = new Promise<void>((resolve, reject) => {
-      loader.load('/assets/models/car_optimized.glb', (gltf) => {
-        const model = gltf.scene;
-        model.scale.setScalar(CAR_MODEL_SCALE);
-        model.rotation.y = Math.PI / 2;
+      const wrapper = new THREE.Group();
+      wrapper.add(model);
 
-        const wrapper = new THREE.Group();
-        wrapper.add(model);
+      const box = new THREE.Box3().setFromObject(wrapper);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      this.carYOffset = -box.min.y + CAR_GROUND_CLEARANCE;
+      this.remoteHalfW = size.x / 2;
+      this.remoteHalfL = size.z / 2;
 
-        const box = new THREE.Box3().setFromObject(wrapper);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        this.carYOffset = -box.min.y + CAR_GROUND_CLEARANCE;
-        this.remoteHalfW = size.x / 2;
-        this.remoteHalfL = size.z / 2;
-
-        this.carTemplate = wrapper;
-        resolve();
-      }, undefined, reject);
+      this.carTemplate = wrapper;
     });
 
-    const walkerPromise = new Promise<void>((resolve, reject) => {
-      loader.load('delivery_guy_running_optimized.glb', (gltf) => {
-        const model = gltf.scene;
+    const walkerPromise = loadFreshGameGltf(GAME_ASSETS.runnerModel).then((gltf) => {
+      const model = gltf.scene;
 
-        const box = new THREE.Box3().setFromObject(model);
-        const modelHeight = box.max.y - box.min.y;
-        const scale = PLAYER_HEIGHT / modelHeight;
-        model.scale.setScalar(scale);
+      const box = new THREE.Box3().setFromObject(model);
+      const modelHeight = box.max.y - box.min.y;
+      const scale = PLAYER_HEIGHT / modelHeight;
+      model.scale.setScalar(scale);
 
-        const scaledMinY = box.min.y * scale;
-        model.position.y = -scaledMinY;
+      const scaledMinY = box.min.y * scale;
+      model.position.y = -scaledMinY;
 
-        this.walkerTemplate = model;
-        this.walkerClips    = gltf.animations;
-        resolve();
-      }, undefined, reject);
+      this.walkerTemplate = model;
+      this.walkerClips    = gltf.animations;
     });
 
     Promise.all([carPromise, walkerPromise]).then(() => {
@@ -108,6 +96,8 @@ export class RemotePlayerSystem implements GameSystem {
         this.spawnPlayer(q.id, q.carColor, q.shirtColor);
       }
       this.pendingQueue = [];
+    }).catch((error) => {
+      console.error('Failed to load remote player models:', error);
     });
 
     EventBus.on<NetWelcomeEvent>     (Events.NET_WELCOME,        this.onWelcome);

@@ -4,8 +4,8 @@
 // =============================================================================
 
 // --- City generation ---
-export const CITY_GRID_X = 6;
-export const CITY_GRID_Z = 6;
+export const CITY_GRID_X = 5;
+export const CITY_GRID_Z = 5;
 export const CITY_SEED = 42;
 export const CITY_CENTRE_X = 350;
 export const CITY_CENTRE_Z = 350;

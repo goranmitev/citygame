@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Game, GameSystem } from '../core/Game';
 import { EventBus, Events, CarEnteredEvent, CarExitedEvent } from '../core/EventBus';
 import { InputSystem } from './InputSystem';
@@ -14,6 +12,7 @@ import {
 } from '../constants';
 import type { StreetSegment } from '../city/CityLayout';
 import { playerOptions } from '../playerOptions';
+import { GAME_ASSETS, loadFreshGameGltf } from '../assets/AssetPreloader';
 
 const SIDEWALK_HEIGHT = 0.15;
 const SIDEWALK_Y_LERP = 12;
@@ -99,6 +98,23 @@ export class WalkSystem implements GameSystem {
   snapToSpawn(): void {
     this.snapCamera();
     this.updateCharacterMesh();
+  }
+
+  applyPlayerColor(): void {
+    if (!this.characterGroup) return;
+
+    const color = new THREE.Color(playerOptions.shirtColor);
+    this.characterGroup.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of materials) {
+          if ('color' in mat && mat.color instanceof THREE.Color) {
+            mat.color.copy(color);
+          }
+        }
+      }
+    });
   }
 
   setSpawn(x: number, y: number, z: number, heading: number): void {
@@ -413,11 +429,7 @@ export class WalkSystem implements GameSystem {
     this.characterGroup = new THREE.Group();
     this.scene.add(this.characterGroup);
 
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('/draco/');
-    const loader = new GLTFLoader();
-    loader.setDRACOLoader(dracoLoader);
-    loader.load('delivery_guy_running_optimized.glb', (gltf) => {
+    loadFreshGameGltf(GAME_ASSETS.runnerModel).then((gltf) => {
       const model = gltf.scene;
 
       // Scale model to match PLAYER_HEIGHT
@@ -433,15 +445,18 @@ export class WalkSystem implements GameSystem {
       model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           child.castShadow = true;
-          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          const mesh = child as THREE.Mesh;
+          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
           if (mat) {
             mat.transparent = false;
             mat.depthWrite = true;
             mat.alphaTest = 0;
             mat.color = new THREE.Color(playerOptions.shirtColor);
+            mesh.material = mat;
           }
         }
       });
+      this.applyPlayerColor();
 
       this.characterGroup.add(model);
 
@@ -452,6 +467,8 @@ export class WalkSystem implements GameSystem {
         this.runAction = this.mixer.clipAction(gltf.animations[0]);
         this.runAction.setLoop(THREE.LoopRepeat, Infinity);
       }
+    }).catch((error) => {
+      console.error('Failed to load character model:', error);
     });
   }
 

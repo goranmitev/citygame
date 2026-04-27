@@ -1,4 +1,5 @@
 import { playerOptions } from './playerOptions';
+import { onGameAssetPreloadChange } from './assets/AssetPreloader';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SERVER_URL: string = ((import.meta as any).env?.VITE_SERVER_URL) ?? 'http://localhost:3001';
@@ -23,6 +24,16 @@ const css = `
     background: linear-gradient(180deg, rgba(10,10,30,0.98) 0%, rgba(0,0,0,0.95) 100%);
     font-family: 'Inter', system-ui, sans-serif;
     color: #fff; overflow-y: auto; padding: 24px 0;
+  }
+  .lb-load-track {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 3px; background: rgba(255,255,255,0.08);
+    z-index: 1;
+  }
+  .lb-load-bar {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg, #ffb432, #ff6a00);
+    transition: width 0.25s ease;
   }
   .lb-title {
     font-family: 'Russo One', sans-serif;
@@ -87,6 +98,11 @@ const css = `
     animation: lb-blink 2s ease-in-out infinite;
     display: none;
   }
+  .lb-assets {
+    min-height: 14px; text-align: center;
+    font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: rgba(255,255,255,0.36);
+  }
   .lb-play {
     padding: 13px 0; border-radius: 12px;
     background: linear-gradient(90deg, #ffb432, #ff6a00);
@@ -96,6 +112,7 @@ const css = `
     text-transform: uppercase; font-family: 'Russo One', sans-serif;
   }
   .lb-play:hover { opacity: 0.9; transform: translateY(-1px); }
+  .lb-play:disabled { opacity: 0.5; cursor: wait; transform: none; }
   .lb-play:active { transform: translateY(1px); }
   .lb-footer {
     margin-top: 1.2rem; color: rgba(255,255,255,0.2);
@@ -108,7 +125,7 @@ const css = `
   }
 `;
 
-export function showLobby(): Promise<void> {
+export function showLobby(worldReadyPromise: Promise<void> = Promise.resolve()): Promise<void> {
   return new Promise((resolve) => {
     const style = document.createElement('style');
     style.textContent = css;
@@ -117,6 +134,7 @@ export function showLobby(): Promise<void> {
     const root = document.createElement('div');
     root.id = 'lobby-root';
     root.innerHTML = `
+      <div class="lb-load-track"><div class="lb-load-bar" id="lb-load-bar"></div></div>
       <div class="lb-title">City <span class="accent">Dash</span></div>
       <hr class="lb-divider" />
       <div class="lb-tagline">Deliver More. Earn More.</div>
@@ -141,11 +159,56 @@ export function showLobby(): Promise<void> {
           <div class="lb-swatches" id="lb-shirt"></div>
         </div>
         <div class="lb-count" id="lb-count"></div>
+        <div class="lb-assets" id="lb-assets"></div>
         <button class="lb-play">PLAY</button>
       </div>
       <div class="lb-footer">A Vibe Jam 2026 Game</div>
     `;
     document.body.appendChild(root);
+    const playButton = root.querySelector<HTMLButtonElement>('.lb-play')!;
+    const assetEl = root.querySelector<HTMLElement>('#lb-assets')!;
+    const loadBar = root.querySelector<HTMLElement>('#lb-load-bar')!;
+    let assetsReady = false;
+    let worldReady = false;
+
+    const syncReadiness = () => {
+      const ready = assetsReady && worldReady;
+      playButton.disabled = !ready;
+
+      if (ready) {
+        loadBar.style.width = '100%';
+        assetEl.textContent = 'Ready';
+      } else if (assetsReady) {
+        loadBar.style.width = '95%';
+        assetEl.textContent = 'Building city';
+      }
+    };
+
+    worldReadyPromise.then(() => {
+      worldReady = true;
+      syncReadiness();
+    }).catch((error) => {
+      console.error('Failed to prepare game before lobby start:', error);
+      worldReady = true;
+      syncReadiness();
+    });
+
+    const unsubscribeAssets = onGameAssetPreloadChange((state) => {
+      const progress = state.total > 0 ? state.loaded / state.total : 0;
+      loadBar.style.width = `${Math.round(progress * 90)}%`;
+
+      if (state.status === 'loading') {
+        assetEl.textContent = `Preparing city ${state.loaded} / ${state.total}`;
+        playButton.disabled = true;
+        return;
+      }
+
+      assetsReady = true;
+      assetEl.textContent = state.status === 'error'
+        ? 'Assets warmed with fallback available'
+        : 'Assets ready';
+      syncReadiness();
+    });
 
     // Mode buttons
     const modeBtns = root.querySelectorAll<HTMLButtonElement>('.lb-mode-btn');
@@ -238,8 +301,10 @@ export function showLobby(): Promise<void> {
     };
 
     // Play — request pointer lock within the user-gesture click, then start game
-    root.querySelector<HTMLButtonElement>('.lb-play')!.addEventListener('click', () => {
+    playButton.addEventListener('click', () => {
+      if (!assetsReady || !worldReady) return;
       if (poll) clearInterval(poll);
+      unsubscribeAssets();
       playerOptions.nickname = nickInput.value.trim() || 'Player';
       root.remove();
       style.remove();

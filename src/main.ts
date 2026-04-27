@@ -14,11 +14,10 @@ import { SoundSystem } from './systems/SoundSystem';
 import { NetworkSystem } from './systems/NetworkSystem';
 import { RemotePlayerSystem } from './systems/RemotePlayerSystem';
 import { showLobby } from './lobby';
+import { preloadGameAssets } from './assets/AssetPreloader';
 import { CITY_GRID_X, CITY_GRID_Z, CITY_SEED, CITY_CENTRE_X, CITY_CENTRE_Z } from './constants';
 
-(async () => {
-  await showLobby();
-
+function createGame(): Game {
   const game = new Game();
 
   // Systems are initialized in order — dependencies must come first
@@ -27,8 +26,7 @@ import { CITY_GRID_X, CITY_GRID_Z, CITY_SEED, CITY_CENTRE_X, CITY_CENTRE_Z } fro
     .addSystem(new InputSystem())
     .addSystem(new CarSystem())           // 'car' — must come before WalkSystem
     .addSystem(new WalkSystem())          // 'player' — depends on CarSystem
-    .addSystem(new SoundSystem())         // depends on CarSystem + WalkSystem
-    .addSystem(new NetworkSystem())       // 'network' — connects to server, relays events
+    .addSystem(new NetworkSystem())       // 'network' — activated after lobby Play
     .addSystem(new RemotePlayerSystem())  // 'remote' — ghost meshes for other players
     .addSystem(new PedestrianSystem())
     .addSystem(new CityBuilder(CITY_GRID_X, CITY_GRID_Z, CITY_SEED))
@@ -38,4 +36,29 @@ import { CITY_GRID_X, CITY_GRID_Z, CITY_SEED, CITY_CENTRE_X, CITY_CENTRE_Z } fro
     .addSystem(new TrafficSystem())       // 'traffic' — must come after CityBuilder
     .addSystem(new CloudSystem(CITY_CENTRE_X, CITY_CENTRE_Z))
     .start();
+
+  return game;
+}
+
+function createGameAfterLobbyPaint(): Promise<Game> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      window.setTimeout(() => resolve(createGame()), 0);
+    });
+  });
+}
+
+(async () => {
+  preloadGameAssets();
+
+  const gamePromise = createGameAfterLobbyPaint();
+  const lobbyPromise = showLobby(gamePromise.then(() => undefined));
+
+  await lobbyPromise;
+  const game = await gamePromise;
+
+  game.getSystem<CarSystem>('car')?.applyPlayerColor();
+  game.getSystem<WalkSystem>('player')?.applyPlayerColor();
+  game.addSystem(new SoundSystem());      // depends on CarSystem + WalkSystem
+  game.getSystem<NetworkSystem>('network')?.activate();
 })();

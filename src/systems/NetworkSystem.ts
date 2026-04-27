@@ -34,6 +34,7 @@ export class NetworkSystem implements GameSystem {
   private game!: Game;
   private sendAccum = 0;
   private connected = false;
+  private active = false;
 
   // Singleplayer simulation state
   private spMode = false;
@@ -50,6 +51,11 @@ export class NetworkSystem implements GameSystem {
     this.game  = game;
     this.car   = game.getSystem<CarSystem>('car')!;
     this.walk  = game.getSystem<WalkSystem>('player')!;
+  }
+
+  activate(): void {
+    if (this.active) return;
+    this.active = true;
 
     if (playerOptions.mode === 'single') {
       this.spMode    = true;
@@ -110,6 +116,8 @@ export class NetworkSystem implements GameSystem {
   }
 
   update(delta: number): void {
+    if (!this.active) return;
+
     if (this.spMode) {
       this.updateSingleplayer(delta);
       return;
@@ -168,6 +176,7 @@ export class NetworkSystem implements GameSystem {
   };
 
   dispose(): void {
+    this.active = false;
     EventBus.off(Events.NET_SEND_CAR_IMPACT, this.sendCarImpact);
     if (this.connected) this.socket.disconnect();
   }
@@ -230,4 +239,3 @@ export class NetworkSystem implements GameSystem {
     };
   }
 }
-
