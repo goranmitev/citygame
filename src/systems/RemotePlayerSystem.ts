@@ -12,6 +12,7 @@ import {
   CAR_HALF_W, CAR_HALF_L, CAR_HEIGHT,
 } from '../constants';
 import { createCarDebugHelper } from '../utils/carCollider';
+import { carModelHasPaintMaterial, cloneCarMaterialsForColor } from '../utils/carPaint';
 import { GAME_ASSETS, loadFreshGameGltf, loadGameGltf } from '../assets/AssetPreloader';
 
 interface RemotePlayer {
@@ -179,19 +180,18 @@ export class RemotePlayerSystem implements GameSystem {
 
     // --- Car ---
     const carClone = skeletonClone(this.carTemplate!) as THREE.Group;
+    const paintOnly = carModelHasPaintMaterial(carClone);
+    const paintColor = new THREE.Color(carColor);
     carClone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-        mat.color          = new THREE.Color(carColor);
-        mat.roughness      = CAR_BODY_ROUGHNESS;
-        mat.metalness      = CAR_BODY_METALNESS;
-        mat.envMapIntensity = CAR_ENV_INTENSITY;
-        mat.emissive       = new THREE.Color(0x111111);
-        mat.emissiveIntensity = 0.3;
-        mesh.material = mat;
+        mesh.material = cloneCarMaterialsForColor(mesh.material, paintColor, paintOnly, {
+          roughness: CAR_BODY_ROUGHNESS,
+          metalness: CAR_BODY_METALNESS,
+          envMapIntensity: CAR_ENV_INTENSITY,
+        });
       }
     });
     const carGroup = new THREE.Group();

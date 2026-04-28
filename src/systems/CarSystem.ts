@@ -27,6 +27,7 @@ import {
 import type { StreetSegment } from '../city/CityLayout';
 import { playerOptions } from '../playerOptions';
 import { GAME_ASSETS, loadGameGltf } from '../assets/AssetPreloader';
+import { applyCarPaintColor, carModelHasPaintMaterial, cloneCarMaterialsForColor } from '../utils/carPaint';
 
 const _camHit = new THREE.Vector3();
 const DEBUG_CAR_COLLIDER = false;
@@ -121,17 +122,7 @@ export class CarSystem implements GameSystem {
   applyPlayerColor(): void {
     if (!this.carGroup) return;
 
-    const color = new THREE.Color(playerOptions.carColor);
-    this.carGroup.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const mat of materials) {
-          if ('color' in mat && mat.color instanceof THREE.Color) {
-            mat.color.copy(color);
-          }
-        }
-      }
-    });
+    applyCarPaintColor(this.carGroup, new THREE.Color(playerOptions.carColor));
   }
 
   /** Speed in km/h (always positive). */
@@ -575,6 +566,8 @@ export class CarSystem implements GameSystem {
       this.carGroup = new THREE.Group();
       this.carGroup.add(model);
       this.ownsCarGeometry = false;
+      const paintOnly = carModelHasPaintMaterial(this.carGroup);
+      const carColor = new THREE.Color(playerOptions.carColor);
 
       // Enable shadows on all meshes + refined materials (less shiny, brighter per request)
       this.carGroup.traverse((child: THREE.Object3D) => {
@@ -583,15 +576,11 @@ export class CarSystem implements GameSystem {
           child.receiveShadow = true;
           // Ensure PBR materials from Meshy are configured for scene lighting
           if (child.material) {
-            const mat = (child.material as THREE.MeshStandardMaterial).clone();
-            if (mat.map) mat.map.needsUpdate = true;
-            mat.roughness = CAR_BODY_ROUGHNESS;
-            mat.metalness = CAR_BODY_METALNESS;
-            mat.envMapIntensity = CAR_ENV_INTENSITY;
-            mat.emissive = new THREE.Color(0x111111);
-            mat.emissiveIntensity = 0.3;
-            mat.color = new THREE.Color(playerOptions.carColor);
-            child.material = mat;
+            child.material = cloneCarMaterialsForColor(child.material, carColor, paintOnly, {
+              roughness: CAR_BODY_ROUGHNESS,
+              metalness: CAR_BODY_METALNESS,
+              envMapIntensity: CAR_ENV_INTENSITY,
+            });
           }
         }
       });
