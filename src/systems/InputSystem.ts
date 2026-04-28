@@ -46,6 +46,7 @@ export class InputSystem implements GameSystem {
 
   // Mobile UI elements
   private interactBtn: HTMLButtonElement | null = null;
+  private interactBtnFace: HTMLSpanElement | null = null;
   private joystickBase: HTMLDivElement | null = null;
   private joystickThumb: HTMLDivElement | null = null;
   private lookIndicator: HTMLDivElement | null = null;
@@ -98,6 +99,7 @@ export class InputSystem implements GameSystem {
     this.canvas.removeEventListener('touchmove', this.onTouchMove);
     this.canvas.removeEventListener('touchend', this.onTouchEnd);
     this.interactBtn?.remove();
+    this.interactBtnFace = null;
     this.joystickBase?.remove();
     this.joystickThumb?.remove();
     this.lookIndicator?.remove();
@@ -232,9 +234,27 @@ export class InputSystem implements GameSystem {
   // --- Mobile UI ---
 
   private buildMobileButtons(): void {
-    const btnStyle: Partial<CSSStyleDeclaration> = {
+    const btnHitStyle: Partial<CSSStyleDeclaration> = {
       position: 'fixed',
       zIndex: '100',
+      width: '80px',
+      height: '80px',
+      borderRadius: '50%',
+      border: '0',
+      background: 'transparent',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      pointerEvents: 'auto',
+      userSelect: 'none',
+      touchAction: 'none',
+      padding: '8px',
+      margin: '0',
+      webkitAppearance: 'none',
+      appearance: 'none',
+    };
+
+    const btnFaceStyle: Partial<CSSStyleDeclaration> = {
       width: '64px',
       height: '64px',
       borderRadius: '50%',
@@ -248,31 +268,33 @@ export class InputSystem implements GameSystem {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      pointerEvents: 'auto',
-      userSelect: 'none',
-      touchAction: 'none',
+      boxSizing: 'border-box',
+      pointerEvents: 'none',
     };
 
     // Interact button — right side, above center
     this.interactBtn = document.createElement('button');
-    Object.assign(this.interactBtn.style, btnStyle, {
-      right: '20px',
-      bottom: '100px',
+    Object.assign(this.interactBtn.style, btnHitStyle, {
+      right: 'calc(12px + env(safe-area-inset-right, 0px))',
+      bottom: 'calc(92px + env(safe-area-inset-bottom, 0px))',
     } as Partial<CSSStyleDeclaration>);
-    this.interactBtn.textContent = 'E';
+    this.interactBtn.setAttribute('aria-label', 'Interact');
+    this.interactBtnFace = document.createElement('span');
+    Object.assign(this.interactBtnFace.style, btnFaceStyle);
+    this.interactBtnFace.textContent = 'E';
+    this.interactBtn.appendChild(this.interactBtnFace);
     this.interactBtn.addEventListener('touchstart', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.state.interact = true;
-      this.state.interactPressed = true;
-      this.interactBtn!.style.background = 'rgba(255,255,255,0.3)';
+      this.setInteractButtonActive(true);
     }, { passive: false });
-    this.interactBtn.addEventListener('touchend', (e) => {
+    const releaseInteract = (e: TouchEvent): void => {
       e.preventDefault();
       e.stopPropagation();
-      this.state.interact = false;
-      this.interactBtn!.style.background = 'rgba(0,0,0,0.35)';
-    }, { passive: false });
+      this.setInteractButtonActive(false);
+    };
+    this.interactBtn.addEventListener('touchend', releaseInteract, { passive: false });
+    this.interactBtn.addEventListener('touchcancel', releaseInteract, { passive: false });
     document.body.appendChild(this.interactBtn);
 
     // Joystick base (appears on touch)
@@ -322,6 +344,19 @@ export class InputSystem implements GameSystem {
       transform: 'translate(-50%, -50%)',
     } as Partial<CSSStyleDeclaration>);
     document.body.appendChild(this.lookIndicator);
+  }
+
+  private setInteractButtonActive(active: boolean): void {
+    if (active) {
+      this.state.interact = true;
+      this.state.interactPressed = true;
+    } else {
+      this.state.interact = false;
+    }
+
+    if (this.interactBtnFace) {
+      this.interactBtnFace.style.background = active ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)';
+    }
   }
 
   // --- Joystick visuals ---
